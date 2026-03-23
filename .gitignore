@@ -1,0 +1,28 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Go build/test artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.out
+
+# Project runtime artifacts
+backend/streaming.db
+backend/streaming.db-*
+backend/uploads/
+backend/media/
+backend/tmp/
+backend/logs/
