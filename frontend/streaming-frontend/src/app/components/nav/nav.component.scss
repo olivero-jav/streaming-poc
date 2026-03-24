@@ -1,0 +1,31 @@
+:host {
+  display: block;
+}
+
+.topbar {
+  background: #141414;
+  color: #e8e8e8;
+  border-bottom: 1px solid #2a2a2a;
+  display: flex;
+  justify-content: space-between;
+}
+
+.logo {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.tabs a,
+.tabs button {
+  border-radius: 20px;
+}
+
+.active-tab {
+  background: #1e1e1e;
+  border: 1px solid #2a2a2a;
+}

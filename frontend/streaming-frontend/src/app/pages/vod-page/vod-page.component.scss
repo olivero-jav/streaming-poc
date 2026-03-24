@@ -1,0 +1,165 @@
+:host {
+  display: block;
+  min-height: 100vh;
+  background: #141414;
+  color: #e8e8e8;
+}
+
+.page-root {
+  min-height: 100vh;
+}
+
+.layout {
+  min-height: calc(100vh - 64px);
+  background: #141414;
+}
+
+.drawer {
+  width: min(420px, 92vw);
+  background: linear-gradient(180deg, #1a1a1a 0%, #171717 100%);
+  border-left: 1px solid #2e2e2e;
+  box-shadow: -18px 0 36px rgba(0, 0, 0, 0.35);
+  border-radius: 0 !important;
+}
+
+:host ::ng-deep .drawer .mat-drawer-inner-container {
+  border-radius: 0 !important;
+}
+
+.player-area {
+  padding: 20px 24px 8px;
+}
+
+.meta {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.meta h2 {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 500;
+}
+
+.list-area {
+  padding: 16px 24px 96px;
+}
+
+.list-header h3 {
+  margin: 0 0 12px;
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #999;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.video-card {
+  background: #1c1c1c;
+  border: 1px solid #252525;
+  color: #ddd;
+}
+
+.video-card.is-clickable {
+  cursor: pointer;
+}
+
+.video-card.is-active {
+  border-color: #5b6af0;
+}
+
+.video-card.is-disabled {
+  opacity: 0.6;
+}
+
+.thumb {
+  min-height: 90px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-bottom: 1px solid #252525;
+}
+
+.thumb mat-icon {
+  font-size: 28px;
+  width: 28px;
+  height: 28px;
+}
+
+.title {
+  margin: 0 0 8px;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:host ::ng-deep .mat-mdc-chip.status-ready {
+  background-color: #16261d !important;
+  border: 1px solid #2f4b3d !important;
+}
+
+:host ::ng-deep .mat-mdc-chip.status-ready .mdc-evolution-chip__text-label {
+  color: #9cc9b2 !important;
+}
+
+:host ::ng-deep .mat-mdc-chip.status-pending {
+  background-color: #2a2417 !important;
+  border: 1px solid #4d4330 !important;
+}
+
+:host ::ng-deep .mat-mdc-chip.status-pending .mdc-evolution-chip__text-label {
+  color: #cdbb92 !important;
+}
+
+:host ::ng-deep .mat-mdc-chip.status-processing {
+  background-color: #172430 !important;
+  border: 1px solid #334a5f !important;
+}
+
+:host ::ng-deep .mat-mdc-chip.status-processing .mdc-evolution-chip__text-label {
+  color: #a5bfd4 !important;
+}
+
+:host ::ng-deep .mat-mdc-chip.status-error {
+  background-color: #2a1717 !important;
+  border: 1px solid #4c3030 !important;
+}
+
+:host ::ng-deep .mat-mdc-chip.status-error .mdc-evolution-chip__text-label {
+  color: #c8a0a0 !important;
+}
+
+.fab {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 1200;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  box-shadow: 0 10px 28px rgba(91, 106, 240, 0.5);
+}
+
+.fab mat-icon {
+  transform: scale(1.08);
+}
+
+.empty,
+.error {
+  color: #aaa;
+}
+
+.loading-state {
+  display: flex;
+  justify-content: center;
+  padding: 24px 0;
+}

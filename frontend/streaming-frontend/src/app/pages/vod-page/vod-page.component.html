@@ -1,0 +1,77 @@
+<div class="page-root">
+  <app-nav />
+
+  <mat-drawer-container autosize class="layout">
+    <mat-drawer class="drawer" [opened]="drawerOpen()" position="end" mode="over">
+      <app-upload-drawer (closed)="closeDrawer()" (uploaded)="uploadVideo($event)" />
+    </mat-drawer>
+
+    <mat-drawer-content>
+      <section class="player-area">
+        <app-video-player [src]="playbackUrl(selectedVideo())" />
+
+        <div class="meta">
+          <h2>{{ selectedVideo()?.title ?? 'Selecciona un video listo para reproducir' }}</h2>
+          @if (selectedVideo(); as selected) {
+            <mat-chip [class]="statusChipClass(selected.status)">{{ statusLabel(selected.status) }}</mat-chip>
+          }
+        </div>
+      </section>
+
+      <section class="list-area">
+        <div class="list-header">
+          <h3>Videos</h3>
+        </div>
+
+        @if (error()) {
+          <p class="error">{{ error() }}</p>
+        }
+
+        @if (loading() && videos().length === 0) {
+          <div class="loading-state">
+            <mat-spinner diameter="28" />
+          </div>
+        } @else {
+          <div class="grid">
+            @for (video of videos(); track video.id) {
+              <mat-card
+                class="video-card"
+                [class.is-active]="isSelected(video)"
+                [class.is-clickable]="video.status === 'ready'"
+                [class.is-disabled]="video.status !== 'ready'"
+                (click)="selectVideo(video)"
+              >
+                <div class="thumb">
+                  @switch (video.status) {
+                    @case ('ready') {
+                      <mat-icon>play_circle</mat-icon>
+                    }
+                    @case ('error') {
+                      <mat-icon>error</mat-icon>
+                    }
+                    @default {
+                      <mat-spinner diameter="20" />
+                    }
+                  }
+                </div>
+
+                <mat-card-content>
+                  <p class="title">{{ video.title }}</p>
+                  <mat-chip [class]="statusChipClass(video.status)">{{ statusLabel(video.status) }}</mat-chip>
+                </mat-card-content>
+              </mat-card>
+            } @empty {
+              <p class="empty">Todavia no hay videos subidos.</p>
+            }
+          </div>
+        }
+      </section>
+    </mat-drawer-content>
+  </mat-drawer-container>
+
+  @if (!drawerOpen()) {
+    <button mat-fab color="primary" class="fab" (click)="openDrawer()" aria-label="Subir video">
+      <mat-icon>add</mat-icon>
+    </button>
+  }
+</div>

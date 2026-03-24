@@ -5,23 +5,34 @@ import (
 	"database/sql"
 	"errors"
 	"log"
+	"net/url"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/gin-gonic/gin"
 	"streaming-poc/backend/internal/storage"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 func main() {
+	backendRoot, err := resolveBackendRoot()
+	if err != nil {
+		log.Fatalf("failed to resolve backend root: %v", err)
+	}
+
 	initCtx, cancelInit := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelInit()
 
-	db, err := storage.InitSQLite(initCtx, "./streaming.db")
+	dbPath := filepath.Join(backendRoot, "streaming.db")
+	log.Printf("Using SQLite DB at %s", dbPath)
+
+	db, err := storage.InitSQLite(initCtx, dbPath)
 	if err != nil {
 		log.Fatalf("failed to initialize storage: %v", err)
 	}
@@ -32,6 +43,7 @@ func main() {
 	}()
 
 	r := gin.Default()
+	r.Use(corsMiddleware())
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{
@@ -54,7 +66,7 @@ func main() {
 		}
 
 		videoID := uuid.NewString()
-		uploadsDir := filepath.Join(".", "uploads")
+		uploadsDir := filepath.Join(backendRoot, "uploads")
 		if err := os.MkdirAll(uploadsDir, 0o755); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to prepare uploads directory"})
 			return
@@ -77,7 +89,7 @@ func main() {
 			return
 		}
 
-		go processVideoAsync(db, video.ID, sourcePath)
+		go processVideoAsync(db, backendRoot, video.ID, sourcePath)
 
 		c.JSON(http.StatusAccepted, video)
 	})
@@ -113,7 +125,7 @@ func main() {
 			return
 		}
 
-		serveHLSVODFile(c, videoID, "index.m3u8")
+		serveHLSVODFile(c, backendRoot, videoID, "index.m3u8")
 	})
 
 	r.GET("/hls/vod/:id/:segment", func(c *gin.Context) {
@@ -124,7 +136,7 @@ func main() {
 			return
 		}
 
-		serveHLSVODFile(c, videoID, segment)
+		serveHLSVODFile(c, backendRoot, videoID, segment)
 	})
 
 	r.PATCH("/videos/:id/status", func(c *gin.Context) {
@@ -171,7 +183,7 @@ func isValidVideoStatus(status string) bool {
 	}
 }
 
-func processVideoAsync(db *sql.DB, videoID, sourcePath string) {
+func processVideoAsync(db *sql.DB, backendRoot, videoID, sourcePath string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
@@ -180,7 +192,7 @@ func processVideoAsync(db *sql.DB, videoID, sourcePath string) {
 		return
 	}
 
-	hlsDir := filepath.Join(".", "media", "hls", videoID)
+	hlsDir := filepath.Join(backendRoot, "media", "hls", videoID)
 	if err := os.MkdirAll(hlsDir, 0o755); err != nil {
 		log.Printf("failed to create hls output directory for %s: %v", videoID, err)
 		_, _ = storage.UpdateVideoStatus(ctx, db, videoID, "error")
@@ -215,8 +227,8 @@ func processVideoAsync(db *sql.DB, videoID, sourcePath string) {
 	}
 }
 
-func serveHLSVODFile(c *gin.Context, videoID, fileName string) {
-	baseDir := filepath.Join(".", "media", "hls", videoID)
+func serveHLSVODFile(c *gin.Context, backendRoot, videoID, fileName string) {
+	baseDir := filepath.Join(backendRoot, "media", "hls", videoID)
 	targetPath := filepath.Clean(filepath.Join(baseDir, fileName))
 	if !strings.HasPrefix(targetPath, filepath.Clean(baseDir)+string(filepath.Separator)) && targetPath != filepath.Clean(baseDir) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file path"})
@@ -234,4 +246,91 @@ func serveHLSVODFile(c *gin.Context, videoID, fileName string) {
 	}
 
 	c.File(targetPath)
+}
+
+func resolveBackendRoot() (string, error) {
+	_, sourceFile, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", errors.New("runtime caller lookup failed")
+	}
+
+	// cmd/main.go -> backend/
+	return filepath.Clean(filepath.Join(filepath.Dir(sourceFile), "..")), nil
+}
+
+func corsMiddleware() gin.HandlerFunc {
+	allowedOrigins := loadAllowedOriginsFromEnv()
+	allowNgrok := strings.EqualFold(strings.TrimSpace(os.Getenv("CORS_ALLOW_NGROK")), "true")
+
+	return func(c *gin.Context) {
+		origin := c.GetHeader("Origin")
+		if isAllowedOrigin(origin, allowedOrigins, allowNgrok) {
+			c.Header("Access-Control-Allow-Origin", origin)
+			c.Header("Vary", "Origin")
+		}
+
+		c.Header("Access-Control-Allow-Methods", "GET,POST,PATCH,HEAD,OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Content-Type,Authorization,Range")
+		c.Header("Access-Control-Expose-Headers", "Content-Length,Content-Range,Accept-Ranges")
+
+		if c.Request.Method == http.MethodOptions {
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+
+		c.Next()
+	}
+}
+
+func loadAllowedOriginsFromEnv() map[string]struct{} {
+	origins := make(map[string]struct{})
+
+	defaultOrigins := []string{
+		"http://localhost:4200",
+		"http://127.0.0.1:4200",
+	}
+
+	raw := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS"))
+	if raw == "" {
+		for _, origin := range defaultOrigins {
+			origins[origin] = struct{}{}
+		}
+		return origins
+	}
+
+	for _, entry := range strings.Split(raw, ",") {
+		origin := strings.TrimSpace(entry)
+		if origin == "" {
+			continue
+		}
+		origins[origin] = struct{}{}
+	}
+
+	return origins
+}
+
+func isAllowedOrigin(origin string, allowedOrigins map[string]struct{}, allowNgrok bool) bool {
+	if origin == "" {
+		return false
+	}
+
+	if _, ok := allowedOrigins[origin]; ok {
+		return true
+	}
+
+	if !allowNgrok {
+		return false
+	}
+
+	parsedOrigin, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+
+	if parsedOrigin.Scheme != "https" {
+		return false
+	}
+
+	host := strings.ToLower(parsedOrigin.Hostname())
+	return strings.HasSuffix(host, ".ngrok-free.app") || strings.HasSuffix(host, ".ngrok.io")
 }

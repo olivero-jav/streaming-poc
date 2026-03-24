@@ -1,0 +1,10 @@
+<main class="watch-root">
+  @if (error()) {
+    <p class="error">{{ error() }}</p>
+  } @else if (video(); as currentVideo) {
+    <app-video-player [src]="playbackUrl(currentVideo.hls_path)" />
+    <h1>{{ currentVideo.title }}</h1>
+  } @else {
+    <p class="loading">Cargando video...</p>
+  }
+</main>

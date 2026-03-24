@@ -1,0 +1,12 @@
+<mat-toolbar class="topbar">
+  <span class="logo">streamingpoc</span>
+
+  <div class="tabs">
+    <a matButton routerLink="/app/vod" routerLinkActive="active-tab" [routerLinkActiveOptions]="{ exact: true }">
+      VOD
+    </a>
+    @if (showLiveTab()) {
+      <button matButton disabled>Live</button>
+    }
+  </div>
+</mat-toolbar>

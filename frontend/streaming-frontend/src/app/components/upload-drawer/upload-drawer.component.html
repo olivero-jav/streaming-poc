@@ -1,0 +1,43 @@
+<div class="drawer-header">
+  <h2>Subir video</h2>
+  <button mat-icon-button type="button" (click)="close()" aria-label="Cerrar panel de subida">
+    <mat-icon>close</mat-icon>
+  </button>
+</div>
+
+<div class="file-row">
+  <label>Archivo</label>
+  <button type="button" class="drop-zone" (click)="openFilePicker(videoFileInput)">
+    <div class="drop-copy">
+      <span class="drop-title">Seleccionar archivo</span>
+      <span class="drop-subtitle">MP4, WEBM o MOV</span>
+    </div>
+  </button>
+  <input
+    #videoFileInput
+    id="videoFileInput"
+    type="file"
+    accept=".mp4,.webm,.mov"
+    class="file-input"
+    (change)="onFileSelected($event)"
+  />
+  @if (file(); as selectedFile) {
+    <p class="file-name">{{ selectedFile.name }}</p>
+  } @else {
+    <p class="helper">Formatos soportados: .mp4, .webm, .mov</p>
+  }
+</div>
+
+<form [formGroup]="form" (ngSubmit)="submit()">
+  <mat-form-field appearance="outline" class="field">
+    <mat-label>Titulo *</mat-label>
+    <input matInput formControlName="title" />
+  </mat-form-field>
+
+  <mat-form-field appearance="outline" class="field">
+    <mat-label>Descripcion (opcional)</mat-label>
+    <textarea matInput rows="3" formControlName="description"></textarea>
+  </mat-form-field>
+
+  <button mat-flat-button color="primary" type="submit" [disabled]="!canSubmit()">Subir</button>
+</form>
