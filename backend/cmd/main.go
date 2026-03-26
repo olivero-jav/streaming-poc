@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -199,7 +200,10 @@ func processVideoAsync(db *sql.DB, backendRoot, videoID, sourcePath string) {
 		return
 	}
 
+	hlsPublicPath := filepath.ToSlash(filepath.Join("/hls/vod", videoID, "index.m3u8"))
 	playlistPath := filepath.Join(hlsDir, "index.m3u8")
+
+	var outputBuf bytes.Buffer
 	cmd := exec.CommandContext(
 		ctx,
 		"ffmpeg",
@@ -209,17 +213,45 @@ func processVideoAsync(db *sql.DB, backendRoot, videoID, sourcePath string) {
 		"-c:a", "aac",
 		"-f", "hls",
 		"-hls_time", "6",
-		"-hls_playlist_type", "vod",
+		"-hls_playlist_type", "event",
 		playlistPath,
 	)
+	cmd.Stdout = &outputBuf
+	cmd.Stderr = &outputBuf
 
-	if output, err := cmd.CombinedOutput(); err != nil {
-		log.Printf("ffmpeg failed for %s: %v - %s", videoID, err, strings.TrimSpace(string(output)))
+	if err := cmd.Start(); err != nil {
+		log.Printf("ffmpeg failed to start for %s: %v", videoID, err)
 		_, _ = storage.UpdateVideoStatus(ctx, db, videoID, "error")
 		return
 	}
 
-	hlsPublicPath := filepath.ToSlash(filepath.Join("/hls/vod", videoID, "index.m3u8"))
+	// As soon as the first segment is on disk, expose the HLS path so the
+	// client can start playing before the transcode finishes.
+	go func() {
+		firstSegment := filepath.Join(hlsDir, "index0.ts")
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if _, err := os.Stat(firstSegment); err == nil {
+					if err := storage.SetHLSPath(ctx, db, videoID, hlsPublicPath); err != nil {
+						log.Printf("failed to set hls_path for %s: %v", videoID, err)
+					}
+					return
+				}
+			}
+		}
+	}()
+
+	if err := cmd.Wait(); err != nil {
+		log.Printf("ffmpeg failed for %s: %v - %s", videoID, err, strings.TrimSpace(outputBuf.String()))
+		_, _ = storage.UpdateVideoStatus(ctx, db, videoID, "error")
+		return
+	}
+
 	if _, err := storage.MarkVideoReady(ctx, db, videoID, hlsPublicPath, 0); err != nil {
 		log.Printf("failed to mark video %s ready: %v", videoID, err)
 		_, _ = storage.UpdateVideoStatus(ctx, db, videoID, "error")

@@ -11,7 +11,7 @@
         <app-video-player [src]="playbackUrl(selectedVideo())" />
 
         <div class="meta">
-          <h2>{{ selectedVideo()?.title ?? 'Selecciona un video listo para reproducir' }}</h2>
+          <h2>{{ selectedVideo()?.title ?? 'Selecciona un video para reproducir' }}</h2>
           @if (selectedVideo(); as selected) {
             <mat-chip [class]="statusChipClass(selected.status)">{{ statusLabel(selected.status) }}</mat-chip>
           }
@@ -37,21 +37,17 @@
               <mat-card
                 class="video-card"
                 [class.is-active]="isSelected(video)"
-                [class.is-clickable]="video.status === 'ready'"
-                [class.is-disabled]="video.status !== 'ready'"
+                [class.is-clickable]="isPlayable(video)"
+                [class.is-disabled]="!isPlayable(video)"
                 (click)="selectVideo(video)"
               >
                 <div class="thumb">
-                  @switch (video.status) {
-                    @case ('ready') {
-                      <mat-icon>play_circle</mat-icon>
-                    }
-                    @case ('error') {
-                      <mat-icon>error</mat-icon>
-                    }
-                    @default {
-                      <mat-spinner diameter="20" />
-                    }
+                  @if (isPlayable(video)) {
+                    <mat-icon>play_circle</mat-icon>
+                  } @else if (video.status === 'error') {
+                    <mat-icon>error</mat-icon>
+                  } @else {
+                    <mat-spinner diameter="20" />
                   }
                 </div>
 

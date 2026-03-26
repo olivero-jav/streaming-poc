@@ -131,6 +131,30 @@ WHERE id = ?;
 	return video, nil
 }
 
+// SetHLSPath updates the hls_path of a video without changing its status.
+func SetHLSPath(ctx context.Context, db *sql.DB, id, hlsPath string) error {
+	const query = `
+UPDATE videos
+SET hls_path = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+`
+
+	result, err := db.ExecContext(ctx, query, hlsPath, id)
+	if err != nil {
+		return fmt.Errorf("set hls path: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read updated rows count: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("video not found: %w", sql.ErrNoRows)
+	}
+
+	return nil
+}
+
 // MarkVideoReady stores output metadata and marks the video as ready.
 func MarkVideoReady(ctx context.Context, db *sql.DB, id, hlsPath string, durationSeconds int) (Video, error) {
 	const updateQuery = `

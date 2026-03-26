@@ -66,8 +66,12 @@ export class VodPageComponent implements OnInit {
       });
   }
 
+  isPlayable(video: VideoItem): boolean {
+    return (video.status === 'ready' || video.status === 'processing') && !!video.hls_path;
+  }
+
   selectVideo(video: VideoItem): void {
-    if (video.status !== 'ready') {
+    if (!this.isPlayable(video)) {
       return;
     }
     this.selectedVideo.set(video);
