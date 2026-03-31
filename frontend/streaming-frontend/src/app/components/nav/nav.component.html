@@ -5,8 +5,8 @@
     <a matButton routerLink="/app/vod" routerLinkActive="active-tab" [routerLinkActiveOptions]="{ exact: true }">
       VOD
     </a>
-    @if (showLiveTab()) {
-      <button matButton disabled>Live</button>
-    }
+    <a matButton routerLink="/app/live" routerLinkActive="active-tab" [routerLinkActiveOptions]="{ exact: true }">
+      Live
+    </a>
   </div>
 </mat-toolbar>

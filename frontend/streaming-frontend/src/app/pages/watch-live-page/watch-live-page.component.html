@@ -1,0 +1,24 @@
+<main class="watch-root">
+  @if (error()) {
+    <p class="error">{{ error() }}</p>
+  } @else if (stream(); as s) {
+    @if (s.status === 'live' && s.hls_path) {
+      <app-video-player [src]="playbackUrl()" />
+      <h1>{{ s.title }}</h1>
+    } @else if (s.status === 'pending') {
+      <div class="state-screen">
+        <mat-spinner diameter="40" />
+        <p>El stream comenzará pronto...</p>
+      </div>
+    } @else {
+      <div class="state-screen">
+        <mat-icon>stop_circle</mat-icon>
+        <p>El stream ha finalizado.</p>
+      </div>
+    }
+  } @else {
+    <div class="state-screen">
+      <mat-spinner diameter="40" />
+    </div>
+  }
+</main>

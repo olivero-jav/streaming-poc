@@ -28,19 +28,22 @@ Accepted statuses used by API layer:
 Frontend resolves this into an absolute API URL before playback.
 
 ## Stream Status Contract
-Current schema allows:
-- `pending`
-- `live`
-- `ended`
+Statuses: `pending` → `live` → `ended`
 
-`video_id` is nullable to support live-first flow.
+Campos en `streams`: `id`, `title`, `stream_key` (unique), `status`, `hls_path`, `started_at`, `ended_at`, `created_at`, `updated_at`. Sin FK a videos.
+
+Funciones en `streams.go`:
+- `CreateStream`, `ListStreams`, `GetStreamByID`, `GetStreamByKey`
+- `MarkStreamLive` (setea `hls_path` + `started_at`)
+- `MarkStreamEnded` (setea `ended_at`)
+- `ResetStaleStreams` (limpieza al startup)
 
 ## Conventions
-- All functions accept `context.Context`.
-- Errors are wrapped with `%w`.
-- Nullable DB fields are converted using `sql.NullString` helpers.
+- Todas las funciones aceptan `context.Context`.
+- Errores wrapeados con `%w`.
+- Campos nullables convertidos con `sql.NullString`.
 
 ## Known Gaps
-- No migrations framework yet (schema is bootstrap SQL string).
-- No storage tests yet.
-- Status values are validated in API layer, not DB-level CHECK for videos yet.
+- Migraciones inline en `db.go` (ALTER TABLE ADD COLUMN); no hay framework de migrations.
+- Sin tests de storage todavía.
+- Status de videos validados en capa API, no a nivel CHECK en DB.

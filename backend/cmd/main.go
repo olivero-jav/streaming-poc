@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"streaming-poc/backend/internal/process"
 	"streaming-poc/backend/internal/storage"
 
 	"github.com/gin-gonic/gin"
@@ -42,6 +43,12 @@ func main() {
 			log.Printf("failed to close storage: %v", closeErr)
 		}
 	}()
+
+	if err := storage.ResetStaleStreams(initCtx, db); err != nil {
+		log.Printf("failed to reset stale streams: %v", err)
+	}
+
+	registry := process.NewRegistry()
 
 	r := gin.Default()
 	r.Use(corsMiddleware())
@@ -125,8 +132,7 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid video id"})
 			return
 		}
-
-		serveHLSVODFile(c, backendRoot, videoID, "index.m3u8")
+		serveHLSFile(c, filepath.Join(backendRoot, "media", "hls", videoID), "index.m3u8")
 	})
 
 	r.GET("/hls/vod/:id/:segment", func(c *gin.Context) {
@@ -136,8 +142,105 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid path"})
 			return
 		}
+		serveHLSFile(c, filepath.Join(backendRoot, "media", "hls", videoID), segment)
+	})
 
-		serveHLSVODFile(c, backendRoot, videoID, segment)
+	// Streams
+	r.POST("/streams", func(c *gin.Context) {
+		var req struct {
+			Title string `json:"title"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json payload"})
+			return
+		}
+		title := strings.TrimSpace(req.Title)
+		if title == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "title is required"})
+			return
+		}
+		stream, err := storage.CreateStream(c.Request.Context(), db, storage.CreateStreamInput{
+			ID:        uuid.NewString(),
+			Title:     title,
+			StreamKey: uuid.NewString(),
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create stream"})
+			return
+		}
+		c.JSON(http.StatusCreated, stream)
+	})
+
+	r.GET("/streams", func(c *gin.Context) {
+		streams, err := storage.ListStreams(c.Request.Context(), db)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list streams"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"items": streams})
+	})
+
+	r.GET("/streams/:id", func(c *gin.Context) {
+		stream, err := storage.GetStreamByID(c.Request.Context(), db, c.Param("id"))
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "stream not found"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get stream"})
+			return
+		}
+		c.JSON(http.StatusOK, stream)
+	})
+
+	// MediaMTX hooks — called from localhost by MediaMTX when OBS connects/disconnects.
+	r.POST("/internal/hooks/publish", func(c *gin.Context) {
+		path := strings.TrimSpace(c.Query("path"))
+		streamKey := strings.TrimPrefix(path, "live/")
+		if streamKey == "" || streamKey == path {
+			c.Status(http.StatusBadRequest)
+			return
+		}
+		stream, err := storage.GetStreamByKey(c.Request.Context(), db, streamKey)
+		if err != nil {
+			log.Printf("publish hook: unknown stream key %q: %v", streamKey, err)
+			c.Status(http.StatusNotFound)
+			return
+		}
+		go startLiveStream(db, backendRoot, stream, registry)
+		c.Status(http.StatusOK)
+	})
+
+	r.POST("/internal/hooks/unpublish", func(c *gin.Context) {
+		path := strings.TrimSpace(c.Query("path"))
+		streamKey := strings.TrimPrefix(path, "live/")
+		if streamKey == "" || streamKey == path {
+			c.Status(http.StatusBadRequest)
+			return
+		}
+		registry.Kill(streamKey)
+		log.Printf("unpublish hook: stopped ffmpeg for stream key %q", streamKey)
+		c.Status(http.StatusOK)
+	})
+
+	// Live HLS
+	r.GET("/hls/live/:id/index.m3u8", func(c *gin.Context) {
+		id := strings.TrimSpace(c.Param("id"))
+		if id == "" || strings.Contains(id, "..") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid stream id"})
+			return
+		}
+		serveHLSFile(c, filepath.Join(backendRoot, "media", "live", id), "index.m3u8")
+	})
+
+	r.GET("/hls/live/:id/:segment", func(c *gin.Context) {
+		id := strings.TrimSpace(c.Param("id"))
+		segment := strings.TrimSpace(c.Param("segment"))
+		if id == "" || segment == "" || strings.Contains(id, "..") || strings.Contains(segment, "..") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid path"})
+			return
+		}
+		serveHLSFile(c, filepath.Join(backendRoot, "media", "live", id), segment)
 	})
 
 	r.PATCH("/videos/:id/status", func(c *gin.Context) {
@@ -259,10 +362,9 @@ func processVideoAsync(db *sql.DB, backendRoot, videoID, sourcePath string) {
 	}
 }
 
-func serveHLSVODFile(c *gin.Context, backendRoot, videoID, fileName string) {
-	baseDir := filepath.Join(backendRoot, "media", "hls", videoID)
+func serveHLSFile(c *gin.Context, baseDir, fileName string) {
 	targetPath := filepath.Clean(filepath.Join(baseDir, fileName))
-	if !strings.HasPrefix(targetPath, filepath.Clean(baseDir)+string(filepath.Separator)) && targetPath != filepath.Clean(baseDir) {
+	if !strings.HasPrefix(targetPath, filepath.Clean(baseDir)+string(filepath.Separator)) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file path"})
 		return
 	}
@@ -278,6 +380,68 @@ func serveHLSVODFile(c *gin.Context, backendRoot, videoID, fileName string) {
 	}
 
 	c.File(targetPath)
+}
+
+func startLiveStream(db *sql.DB, backendRoot string, stream storage.Stream, registry *process.Registry) {
+	ctx := context.Background()
+
+	hlsDir := filepath.Join(backendRoot, "media", "live", stream.ID)
+	if err := os.MkdirAll(hlsDir, 0o755); err != nil {
+		log.Printf("failed to create live hls dir for stream %s: %v", stream.ID, err)
+		return
+	}
+
+	hlsPublicPath := "/hls/live/" + stream.ID + "/index.m3u8"
+	playlistPath := filepath.Join(hlsDir, "index.m3u8")
+
+	cmd := exec.Command(
+		"ffmpeg",
+		"-i", "rtmp://localhost:1935/live/"+stream.StreamKey,
+		"-c:v", "copy",
+		"-c:a", "aac",
+		"-f", "hls",
+		"-hls_time", "6",
+		"-hls_playlist_type", "event",
+		playlistPath,
+	)
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		log.Printf("failed to start ffmpeg for stream %s: %v", stream.ID, err)
+		return
+	}
+
+	registry.Register(stream.StreamKey, cmd)
+
+	// Poll for the first segment, then expose the stream for playback.
+	go func() {
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		deadline := time.After(30 * time.Second)
+		for {
+			select {
+			case <-deadline:
+				log.Printf("timed out waiting for first live segment of stream %s", stream.ID)
+				return
+			case <-ticker.C:
+				if _, err := os.Stat(filepath.Join(hlsDir, "index0.ts")); err == nil {
+					if err := storage.MarkStreamLive(ctx, db, stream.ID, hlsPublicPath); err != nil {
+						log.Printf("failed to mark stream %s live: %v", stream.ID, err)
+					}
+					return
+				}
+			}
+		}
+	}()
+
+	if err := cmd.Wait(); err != nil {
+		log.Printf("ffmpeg exited for stream %s: %v", stream.ID, err)
+	}
+
+	registry.Kill(stream.StreamKey)
+	if err := storage.MarkStreamEnded(ctx, db, stream.ID); err != nil {
+		log.Printf("failed to mark stream %s ended: %v", stream.ID, err)
+	}
 }
 
 func resolveBackendRoot() (string, error) {

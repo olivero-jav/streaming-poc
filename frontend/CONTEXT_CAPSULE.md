@@ -1,22 +1,14 @@
 # CONTEXT CAPSULE - Frontend
 
 ## Purpose
-Angular frontend for a streaming POC that targets VOD + Live.
-Current implementation in this iteration is VOD-first.
+Angular frontend para un POC de streaming VOD + Live.
 
 ## Current Scope
-Implemented now:
-- Admin route: `/app/vod`
-  - list videos
-  - select `ready` videos for playback
-  - upload new videos with drawer form
-- Public route: `/watch/vod/:id`
-  - playback-only view
-
-Planned next (not implemented yet):
-- Admin route: `/app/live`
-- Public route: `/watch/live/:streamId`
-- Live control and playback UX
+Implementado:
+- Admin route: `/app/vod` — lista videos, selecciona `ready` para reproducir, sube videos con drawer
+- Public route: `/watch/vod/:id` — vista de reproducción
+- Admin route: `/app/live` — lista streams, crea streams, muestra stream key para OBS, reproduce live/ended inline
+- Public route: `/watch/live/:id` — vista de reproducción de un stream (polling cada 3s)
 
 ## Runtime Dependencies
 - Frontend dev server: `http://localhost:4200`
@@ -24,17 +16,20 @@ Planned next (not implemented yet):
 - HLS playback via `hls.js`
 
 ## Important Integration Rules
-- API service uses fixed `API_BASE_URL` pointing to backend.
-- Backend returns `hls_path` as relative route.
-- Frontend must convert relative `hls_path` to absolute API URL before passing to player.
+- `API_BASE_URL` hardcodeado (mover a environments para staging/ngrok).
+- Backend retorna `hls_path` como ruta relativa; frontend la convierte a URL absoluta antes del player.
+- `StreamApiService.resolvePlaybackUrl()` maneja tanto rutas relativas como absolutas.
 
 ## UX Rules Currently Enforced
-- UI language is Spanish.
-- Live tab is hidden until live iteration is implemented.
-- Only videos with status `ready` are selectable/clickable for playback.
-- Upload FAB hides while drawer is open.
+- UI en español.
+- Tab Live habilitado y funcional.
+- Solo videos con `status=ready` son seleccionables/clicables en VOD.
+- Upload FAB se oculta mientras el drawer está abierto.
+- Live page hace polling cada 5s para actualizar la lista de streams.
+- Watch Live page hace polling cada 3s para refrescar estado del stream.
+- Streams `ended` son reproducibles (segmentos HLS quedan en disco).
 
 ## Known Risks / Follow-ups
-- `API_BASE_URL` is hardcoded (move to environments for staging/ngrok).
-- No global "backend offline" banner yet.
-- Public watch routes have no auth by design for POC.
+- `API_BASE_URL` hardcodeado (mover a environments).
+- Sin banner global de "backend offline".
+- Rutas públicas sin auth por diseño en POC.

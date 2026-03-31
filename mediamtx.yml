@@ -1,0 +1,25 @@
+# MediaMTX configuration for the streaming POC.
+#
+# OBS settings:
+#   Service:    Custom
+#   Server:     rtmp://<host>/live
+#   Stream Key: <streamKey from UI>
+#
+# MediaMTX receives RTMP on :1935.
+# Go's backend serves the HLS output — MediaMTX's own HLS server is disabled.
+
+logLevel: info
+logDestinations: [stdout]
+
+# Disable MediaMTX's built-in HLS server; Go serves HLS from disk.
+hls: no
+
+rtmp: yes
+rtmpAddress: :1935
+
+paths:
+  # Matches rtmp://<host>/live/<streamKey>
+  # $MTX_PATH is set by MediaMTX as an env var before running the command.
+  ~^live/.+:
+    runOnReady: wget -q -O /dev/null --post-data="" "http://host.docker.internal:8080/internal/hooks/publish?path=$MTX_PATH"
+    runOnNotReady: wget -q -O /dev/null --post-data="" "http://host.docker.internal:8080/internal/hooks/unpublish?path=$MTX_PATH"

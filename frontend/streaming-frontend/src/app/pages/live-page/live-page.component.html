@@ -1,0 +1,92 @@
+<div class="page-root">
+  <app-nav />
+
+  <section class="player-area">
+    @if (selectedStream()?.hls_path) {
+      <app-video-player [src]="playbackUrl(selectedStream())" />
+    } @else {
+      <div class="player-placeholder">
+        @if (selectedStream()?.status === 'pending') {
+          <mat-spinner diameter="32" />
+          <p>Esperando que el stream comience...</p>
+        } @else if (selectedStream()?.status === 'ended') {
+          <mat-icon>stop_circle</mat-icon>
+          <p>El stream ha finalizado.</p>
+        } @else {
+          <mat-icon>live_tv</mat-icon>
+          <p>Selecciona o crea un stream</p>
+        }
+      </div>
+    }
+
+    @if (selectedStream(); as stream) {
+      <div class="meta">
+        <h2>{{ stream.title }}</h2>
+        <mat-chip [class]="statusChipClass(stream.status)">{{ statusLabel(stream.status) }}</mat-chip>
+      </div>
+      <div class="obs-info">
+        <span class="obs-row">
+          <span class="obs-label">Server</span>
+          <code>rtmp://localhost:1935/live</code>
+        </span>
+        <span class="obs-row">
+          <span class="obs-label">Stream Key</span>
+          <code>{{ stream.stream_key }}</code>
+          <button mat-icon-button (click)="copyStreamKey(stream.stream_key)" aria-label="Copiar stream key">
+            <mat-icon>content_copy</mat-icon>
+          </button>
+        </span>
+      </div>
+    }
+  </section>
+
+  <section class="list-area">
+    <div class="list-header">
+      <h3>Streams</h3>
+    </div>
+
+    @if (error()) {
+      <p class="error">{{ error() }}</p>
+    }
+
+    @if (loading() && streams().length === 0) {
+      <div class="loading-state">
+        <mat-spinner diameter="28" />
+      </div>
+    } @else {
+      <div class="grid">
+        @for (stream of streams(); track stream.id) {
+          <mat-card
+            class="stream-card is-clickable"
+            [class.is-active]="isSelected(stream)"
+            (click)="selectStream(stream)"
+          >
+            <div class="thumb">
+              @switch (stream.status) {
+                @case ('live') {
+                  <mat-icon class="icon-live">live_tv</mat-icon>
+                }
+                @case ('ended') {
+                  <mat-icon>stop_circle</mat-icon>
+                }
+                @default {
+                  <mat-spinner diameter="20" />
+                }
+              }
+            </div>
+            <mat-card-content>
+              <p class="title">{{ stream.title }}</p>
+              <mat-chip [class]="statusChipClass(stream.status)">{{ statusLabel(stream.status) }}</mat-chip>
+            </mat-card-content>
+          </mat-card>
+        } @empty {
+          <p class="empty">No hay streams creados todavía.</p>
+        }
+      </div>
+    }
+  </section>
+
+  <button mat-fab color="primary" class="fab" (click)="openCreateDialog()" aria-label="Crear stream">
+    <mat-icon>add</mat-icon>
+  </button>
+</div>

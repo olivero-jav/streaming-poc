@@ -3,49 +3,63 @@
 ## Purpose
 Go backend for a streaming POC with:
 - VOD upload and async processing to HLS
-- Stream lifecycle groundwork (`pending`, `live`, `ended`)
+- Live streaming via RTMP (MediaMTX) → HLS
+- Stream lifecycle (`pending`, `live`, `ended`)
 - SQLite persistence
 
 ## Current Scope
 - HTTP server in `cmd/main.go` (Gin)
 - Storage layer in `internal/storage/`
+- Process registry in `internal/process/`
 - VOD endpoints:
   - `POST /videos` (multipart upload, returns `202`)
   - `GET /videos`
   - `GET /videos/:id`
-  - `PATCH /videos/:id/status` (internal-use for now; currently unauthenticated)
-- HLS VOD serving endpoints (controlled, no broad static exposure):
+  - `PATCH /videos/:id/status` (internal-use; currently unauthenticated)
+- HLS VOD serving:
   - `GET /hls/vod/:id/index.m3u8`
   - `GET /hls/vod/:id/:segment`
-- CORS enabled for local frontend:
-  - `http://localhost:4200`
-  - `http://127.0.0.1:4200`
+- Stream endpoints:
+  - `POST /streams` (creates stream with a generated stream key)
+  - `GET /streams`
+  - `GET /streams/:id`
+- HLS Live serving:
+  - `GET /hls/live/:id/index.m3u8`
+  - `GET /hls/live/:id/:segment`
+- MediaMTX hooks (localhost only):
+  - `POST /internal/hooks/publish` → arranca ffmpeg para el stream
+  - `POST /internal/hooks/unpublish` → mata ffmpeg via registry
+- CORS configurable via env; por defecto permite `http://localhost:4200` y `http://127.0.0.1:4200`
 
 ## Key Runtime Flow (VOD)
-1. Client uploads file using multipart.
-2. Backend saves source file under `backend/uploads/`.
-3. Video row is created in SQLite (`status=pending`).
-4. Background FFmpeg job sets:
-   - `processing` while transcoding
-   - `ready` on success (`hls_path` set)
-   - `error` on failure
-5. HLS playlist/segments are stored under `backend/media/hls/{videoID}/`.
+1. Cliente sube archivo multipart.
+2. Backend guarda en `backend/uploads/`.
+3. Fila en SQLite con `status=pending`.
+4. FFmpeg async transcodifica a HLS → `backend/media/hls/{videoID}/`.
+5. Estado avanza: `processing` → `ready` (o `error`).
+
+## Key Runtime Flow (Live)
+1. OBS/streamer conecta por RTMP a MediaMTX (`rtmp://localhost:1935/live/{streamKey}`).
+2. MediaMTX llama `POST /internal/hooks/publish?path=live/{streamKey}`.
+3. Backend lanza ffmpeg que lee el RTMP y escribe HLS en `backend/media/live/{streamID}/`.
+4. Cuando aparece el primer segmento, el stream pasa a `status=live`.
+5. Al desconectarse OBS, MediaMTX llama `POST /internal/hooks/unpublish`.
+6. Registry mata ffmpeg → stream pasa a `status=ended`.
+7. Los segmentos HLS quedan en disco (no se borran); el stream es reproducible post-ended.
 
 ## Data Model Notes
-- `videos` has processing state and HLS metadata.
-- `streams` exists for live pipeline evolution and allows nullable `video_id`.
+- `videos`: estado de procesamiento + metadata HLS.
+- `streams`: title, stream_key (RTMP), status, hls_path, started_at, ended_at. No tiene FK a videos.
 
 ## Operational Notes
-- `ffmpeg` must be available in PATH for async processing.
-- Runtime paths are deterministic and resolved from source location (`cmd/main.go`):
-  - DB file: `backend/streaming.db`
-  - uploads: `backend/uploads/`
-  - HLS files: `backend/media/hls/...`
-- Generated assets (`uploads`, `media`, DB) are ignored by `.gitignore`.
-- `PATCH /videos/:id/status` is exposed without auth in this POC; acceptable for local/demo use, but should be restricted before public use.
+- `ffmpeg` debe estar en PATH.
+- MediaMTX debe estar corriendo y configurado para llamar los hooks.
+- Runtime paths resueltos desde `cmd/main.go` via `runtime.Caller`.
+- Al iniciar, `ResetStaleStreams` pasa streams `live` a `ended` (limpieza de crashes previos).
+- `PATCH /videos/:id/status` sin auth; aceptable para POC local.
 
 ## Near-Term TODOs
-- Priority: use `ffprobe` to persist real `duration_seconds` (currently videos end as `0`).
-- Add ffmpeg/ffprobe dependency checks at startup.
-- Add dedicated handlers/modules (`api/`, `hls.go`) as code grows.
-- Add tests for handlers and storage transitions.
+- Usar `ffprobe` para persistir `duration_seconds` real en videos.
+- Agregar chequeo de dependencias (ffmpeg/ffprobe) al startup.
+- Los segmentos live no se limpian al terminar el stream; evaluar cleanup o conversión a VOD.
+- Agregar tests para handlers y transiciones de storage.
