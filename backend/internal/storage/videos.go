@@ -242,6 +242,17 @@ func scanVideoRows(rows *sql.Rows) (Video, error) {
 	return video, nil
 }
 
+// CreateVideoFromStream inserts a VOD entry that is already ready for playback,
+// derived from a completed live stream. No transcoding step is needed because
+// the HLS files were produced during the live session.
+func CreateVideoFromStream(ctx context.Context, db *sql.DB, id, title, hlsPath string) (Video, error) {
+	const q = `INSERT INTO videos (id, title, status, hls_path) VALUES (?, ?, 'ready', ?);`
+	if _, err := db.ExecContext(ctx, q, id, title, hlsPath); err != nil {
+		return Video{}, fmt.Errorf("insert video from stream: %w", err)
+	}
+	return GetVideoByID(ctx, db, id)
+}
+
 func nullStringToString(v sql.NullString) string {
 	if !v.Valid {
 		return ""

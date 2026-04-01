@@ -12,6 +12,7 @@ This package is intentionally under `internal/` to avoid external imports.
 - `videos.go`
   - CRUD-ish helpers for VOD lifecycle:
     - `CreateVideo`
+    - `CreateVideoFromStream` — crea VOD con `status=ready` directamente desde un stream terminado; `hls_path` apunta a `/hls/live/{streamID}/index.m3u8` (sin transcoding ni copia de archivos)
     - `ListVideos`
     - `GetVideoByID`
     - `UpdateVideoStatus`

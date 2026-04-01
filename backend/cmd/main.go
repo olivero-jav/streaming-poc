@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log"
 	"net/url"
 	"net/http"
@@ -442,6 +443,45 @@ func startLiveStream(db *sql.DB, backendRoot string, stream storage.Stream, regi
 	if err := storage.MarkStreamEnded(ctx, db, stream.ID); err != nil {
 		log.Printf("failed to mark stream %s ended: %v", stream.ID, err)
 	}
+
+	go promoteStreamToVOD(db, backendRoot, stream)
+}
+
+// promoteStreamToVOD creates a ready VOD entry from the HLS files produced
+// during a live stream session. The files are served in place — no copy needed.
+func promoteStreamToVOD(db *sql.DB, backendRoot string, stream storage.Stream) {
+	playlistPath := filepath.Join(backendRoot, "media", "live", stream.ID, "index.m3u8")
+	if _, err := os.Stat(playlistPath); err != nil {
+		log.Printf("promote stream %s: no HLS playlist found, skipping VOD creation", stream.ID)
+		return
+	}
+
+	if err := finalizeHLSPlaylist(playlistPath); err != nil {
+		log.Printf("promote stream %s: failed to finalize playlist: %v", stream.ID, err)
+		// non-fatal: proceed anyway, playback may still work
+	}
+
+	hlsPublicPath := "/hls/live/" + stream.ID + "/index.m3u8"
+	video, err := storage.CreateVideoFromStream(context.Background(), db, uuid.NewString(), stream.Title, hlsPublicPath)
+	if err != nil {
+		log.Printf("promote stream %s: failed to create VOD record: %v", stream.ID, err)
+		return
+	}
+	log.Printf("stream %s promoted to VOD %s (%s)", stream.ID, video.ID, stream.Title)
+}
+
+// finalizeHLSPlaylist appends #EXT-X-ENDLIST to the playlist if it is missing.
+// FFmpeg may skip this tag when it is killed rather than shut down cleanly.
+func finalizeHLSPlaylist(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read playlist: %w", err)
+	}
+	content := strings.TrimRight(string(data), "\r\n")
+	if strings.HasSuffix(content, "#EXT-X-ENDLIST") {
+		return nil
+	}
+	return os.WriteFile(path, []byte(content+"\n#EXT-X-ENDLIST\n"), 0o644)
 }
 
 func resolveBackendRoot() (string, error) {

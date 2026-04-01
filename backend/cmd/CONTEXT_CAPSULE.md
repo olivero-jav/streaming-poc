@@ -12,6 +12,7 @@
 - Lógica de negocio/datos delegada a `internal/storage` e `internal/process`.
 - FFmpeg VOD arranca en goroutine tras el upload.
 - FFmpeg Live arranca en goroutine cuando MediaMTX llama el hook publish.
+- Al terminar un stream, `promoteStreamToVOD` crea automáticamente un VOD apuntando a los archivos HLS live existentes (sin retranscoding ni copia). `finalizeHLSPlaylist` añade `#EXT-X-ENDLIST` si FFmpeg fue killado sin cerrarse limpiamente.
 - Runtime paths anclados al backend root via `runtime.Caller`.
 - CORS middleware local permite frontend en `:4200`.
 
