@@ -273,6 +273,25 @@ func main() {
 		c.JSON(http.StatusOK, video)
 	})
 
+	distDir := filepath.Join(backendRoot, "..", "frontend", "streaming-frontend", "dist", "streaming-frontend", "browser")
+	if _, err := os.Stat(distDir); err == nil {
+		r.NoRoute(func(c *gin.Context) {
+			urlPath := c.Request.URL.Path
+			filePath := filepath.Clean(filepath.Join(distDir, filepath.FromSlash(urlPath)))
+			cleanDist := filepath.Clean(distDir)
+			if filePath != cleanDist && !strings.HasPrefix(filePath, cleanDist+string(filepath.Separator)) {
+				c.Status(http.StatusForbidden)
+				return
+			}
+			if info, statErr := os.Stat(filePath); statErr == nil && !info.IsDir() {
+				c.File(filePath)
+				return
+			}
+			c.File(filepath.Join(distDir, "index.html"))
+		})
+		log.Printf("Serving Angular frontend from %s", distDir)
+	}
+
 	log.Println("Starting HTTP server on http://localhost:8080")
 	if err := r.Run(":8080"); err != nil {
 		log.Fatalf("server failed: %v", err)

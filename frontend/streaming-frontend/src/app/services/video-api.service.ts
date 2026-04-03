@@ -3,7 +3,15 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { VideoItem, VideoListResponse } from '../models/video.model';
 
-export const API_BASE_URL = 'http://localhost:8080';
+function resolveApiBaseUrl(): string {
+  const { hostname } = window.location;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:8080';
+  }
+  return window.location.origin;
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
 
 @Injectable({ providedIn: 'root' })
 export class VideoApiService {
