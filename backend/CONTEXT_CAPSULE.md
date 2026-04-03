@@ -30,6 +30,7 @@ Go backend for a streaming POC with:
   - `POST /internal/hooks/publish` → arranca ffmpeg para el stream
   - `POST /internal/hooks/unpublish` → mata ffmpeg via registry
 - CORS configurable via env; por defecto permite `http://localhost:4200` y `http://127.0.0.1:4200`
+- Sirve el build estático de Angular desde `frontend/streaming-frontend/dist/streaming-frontend/browser/` si existe; fallback a `index.html` para rutas SPA. Si no existe el dist, el comportamiento no cambia (dev local con Angular en 4200).
 
 ## Key Runtime Flow (VOD)
 1. Cliente sube archivo multipart.

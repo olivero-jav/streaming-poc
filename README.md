@@ -16,6 +16,7 @@ POC de streaming con arquitectura `backend` (Go + Gin + SQLite + FFmpeg) y `fron
 - Docker (para MediaMTX)
 - `ffmpeg` disponible en PATH
 - OBS (para emitir streams)
+- ngrok instalado y autenticado (`ngrok config add-authtoken <token>`) — necesario solo para el despliegue con ngrok
 
 ## Levantar MediaMTX
 
@@ -46,7 +47,7 @@ $env:CORS_ALLOWED_ORIGINS="http://localhost:4200,https://tu-url.ngrok-free.app"
 go run cmd/main.go
 ```
 
-## Levantar frontend
+## Levantar frontend (desarrollo local)
 
 ```powershell
 cd frontend/streaming-frontend
@@ -55,6 +56,34 @@ npm start
 ```
 
 Frontend por defecto: `http://localhost:4200`
+
+## Despliegue con ngrok
+
+Para exponer la app a otra red sin servidor remoto. OBS debe correr en la misma máquina.
+
+**1. Build del frontend**
+```powershell
+cd frontend/streaming-frontend
+npm run build
+```
+
+El backend sirve automáticamente los archivos generados en `dist/streaming-frontend/browser/` — no hace falta levantar el dev server de Angular.
+
+**2. Levantar MediaMTX y backend** (igual que en desarrollo local)
+
+**3. Levantar ngrok**
+```powershell
+ngrok start --all
+```
+
+El config en `%USERPROFILE%\AppData\Local\ngrok\ngrok.yml` ya tiene el túnel HTTP al puerto 8080 configurado.
+
+ngrok muestra la URL pública, por ejemplo:
+```
+Forwarding  https://xxxx.ngrok-free.app -> http://localhost:8080
+```
+
+Esa URL es la que se abre en el navegador. OBS sigue apuntando a `rtmp://localhost:1935/live`.
 
 ## Rutas actuales
 
