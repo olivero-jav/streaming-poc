@@ -130,6 +130,28 @@ Esa URL es la que se abre en el navegador. OBS sigue apuntando a `rtmp://localho
 5. En ~6s el stream pasa a `live` y es reproducible desde la app.
 6. Al detener OBS, MediaMTX llama `unpublish` → stream pasa a `ended`.
 
+## Load testing (k6)
+
+Requiere [k6](https://k6.io/docs/get-started/installation/) instalado.
+
+**1. Configura `testing/.env`** (copia de `testing/.env.example`):
+```env
+BASE_URL=http://localhost:8080
+VUS=10
+DURATION=15m
+VIDEO_ID=   # requerido para hls-vod
+STREAM_ID=  # requerido para hls-live
+```
+
+**2. Corre el test:**
+```powershell
+.\testing\run.ps1 api-smoke   # prueba endpoints REST bajo carga
+.\testing\run.ps1 hls-vod     # simula espectadores descargando un video
+.\testing\run.ps1 hls-live    # simula espectadores en un stream en vivo
+```
+
+Los reportes HTML y JSON se generan en `testing/reports/`.
+
 ## Notas
 
 - Los segmentos HLS de streams terminados no se eliminan; los streams `ended` son reproducibles.

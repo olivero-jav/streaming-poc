@@ -26,3 +26,6 @@ backend/uploads/
 backend/media/
 backend/tmp/
 backend/logs/
+
+# k6 load test reports
+testing/reports/

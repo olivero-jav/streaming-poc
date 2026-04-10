@@ -5,9 +5,13 @@
  *   $env:BASE_URL="http://localhost:8080"
  *   $env:VUS="10"; $env:DURATION="15m"
  *   k6 run testing/api-smoke.js
+ *
+ * Reportes generados en testing/reports/api-smoke-<timestamp>.{html,json}
  */
 import http from 'k6/http';
 import { check, sleep } from 'k6';
+import { htmlReport } from 'https://raw.githubusercontent.com/benc-uk/k6-reporter/main/dist/bundle.js';
+import { textSummary } from 'https://jslib.k6.io/k6-summary/0.0.1/index.js';
 
 const base = __ENV.BASE_URL || 'http://localhost:8080';
 
@@ -80,4 +84,14 @@ export default function () {
   }
 
   sleep(0.3 + Math.random() * 0.7);
+}
+
+export function handleSummary(data) {
+  const ts = new Date().toISOString().slice(0, 16).replace(/:/g, '-');
+  const base = `testing/reports/api-smoke-${ts}`;
+  return {
+    [`${base}.html`]: htmlReport(data),
+    [`${base}.json`]: JSON.stringify(data, null, 2),
+    stdout: textSummary(data, { indent: ' ', enableColors: true }),
+  };
 }
