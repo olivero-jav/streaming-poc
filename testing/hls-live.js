@@ -9,7 +9,7 @@
  *   $env:VUS="10"; $env:DURATION="15m"
  *   k6 run testing/hls-live.js
  *
- * Reportes generados en testing/reports/hls-live-<timestamp>.{html,json}
+ * Reportes: REPORT_DIR (run.ps1), ./reports con cwd testing/, o testing/reports desde la raíz del repo.
  */
 import http from 'k6/http';
 import { check, sleep } from 'k6';
@@ -95,9 +95,13 @@ export default function (data) {
   sleep(0.4 + Math.random() * 0.9);
 }
 
+function reportDir() {
+  return (__ENV.REPORT_DIR || 'reports').replace(/\\/g, '/').replace(/\/+$/, '');
+}
+
 export function handleSummary(data) {
   const ts = new Date().toISOString().slice(0, 16).replace(/:/g, '-');
-  const base = `testing/reports/hls-live-${ts}`;
+  const base = `${reportDir()}/hls-live-${ts}`;
   return {
     [`${base}.html`]: htmlReport(data),
     [`${base}.json`]: JSON.stringify(data, null, 2),

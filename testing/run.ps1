@@ -38,5 +38,8 @@ $scriptPath = "$PSScriptRoot\$Script.js"
 Write-Host "Corriendo $Script (VUS=$env:VUS, DURATION=$env:DURATION, BASE_URL=$env:BASE_URL)" -ForegroundColor Cyan
 
 New-Item -ItemType Directory -Force -Path "$PSScriptRoot\reports" | Out-Null
+if (-not $env:REPORT_DIR) {
+    $env:REPORT_DIR = (Join-Path $PSScriptRoot 'reports').Replace('\', '/')
+}
 
 k6 run $scriptPath

@@ -9,7 +9,7 @@
  *   $env:VUS="10"; $env:DURATION="15m"
  *   k6 run testing/hls-vod.js
  *
- * Reportes generados en testing/reports/hls-vod-<timestamp>.{html,json}
+ * Reportes: carpeta REPORT_DIR (run.ps1 la fija), o ./reports si k6 cwd es testing/, o testing/reports desde la raíz del repo.
  */
 import http from 'k6/http';
 import { check, sleep } from 'k6';
@@ -89,9 +89,13 @@ export default function (data) {
   sleep(0.5 + Math.random() * 1.0);
 }
 
+function reportDir() {
+  return (__ENV.REPORT_DIR || 'reports').replace(/\\/g, '/').replace(/\/+$/, '');
+}
+
 export function handleSummary(data) {
   const ts = new Date().toISOString().slice(0, 16).replace(/:/g, '-');
-  const base = `testing/reports/hls-vod-${ts}`;
+  const base = `${reportDir()}/hls-vod-${ts}`;
   return {
     [`${base}.html`]: htmlReport(data),
     [`${base}.json`]: JSON.stringify(data, null, 2),
