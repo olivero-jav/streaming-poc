@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // Stream is the API-facing model for a live stream entry.
@@ -31,7 +32,7 @@ const streamCols = `id, title, stream_key, status, hls_path, started_at, ended_a
 
 // CreateStream inserts a new stream record and returns it.
 func CreateStream(ctx context.Context, db *sql.DB, input CreateStreamInput) (Stream, error) {
-	const q = `INSERT INTO streams (id, title, stream_key) VALUES (?, ?, ?);`
+	const q = `INSERT INTO streams (id, title, stream_key) VALUES ($1, $2, $3);`
 	if _, err := db.ExecContext(ctx, q, input.ID, input.Title, input.StreamKey); err != nil {
 		return Stream{}, fmt.Errorf("insert stream: %w", err)
 	}
@@ -59,7 +60,7 @@ func ListStreams(ctx context.Context, db *sql.DB) ([]Stream, error) {
 
 // GetStreamByID returns a single stream by its ID.
 func GetStreamByID(ctx context.Context, db *sql.DB, id string) (Stream, error) {
-	s, err := scanStreamRow(db.QueryRowContext(ctx, "SELECT "+streamCols+" FROM streams WHERE id = ?;", id))
+	s, err := scanStreamRow(db.QueryRowContext(ctx, "SELECT "+streamCols+" FROM streams WHERE id = $1;", id))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Stream{}, fmt.Errorf("stream not found: %w", sql.ErrNoRows)
@@ -71,7 +72,7 @@ func GetStreamByID(ctx context.Context, db *sql.DB, id string) (Stream, error) {
 
 // GetStreamByKey returns a stream by its RTMP stream key.
 func GetStreamByKey(ctx context.Context, db *sql.DB, streamKey string) (Stream, error) {
-	s, err := scanStreamRow(db.QueryRowContext(ctx, "SELECT "+streamCols+" FROM streams WHERE stream_key = ?;", streamKey))
+	s, err := scanStreamRow(db.QueryRowContext(ctx, "SELECT "+streamCols+" FROM streams WHERE stream_key = $1;", streamKey))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Stream{}, fmt.Errorf("stream not found: %w", sql.ErrNoRows)
@@ -85,8 +86,8 @@ func GetStreamByKey(ctx context.Context, db *sql.DB, streamKey string) (Stream, 
 func MarkStreamLive(ctx context.Context, db *sql.DB, id, hlsPath string) error {
 	const q = `
 UPDATE streams
-SET status = 'live', hls_path = ?, started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-WHERE id = ?;`
+SET status = 'live', hls_path = $1, started_at = NOW(), updated_at = NOW()
+WHERE id = $2;`
 	result, err := db.ExecContext(ctx, q, hlsPath, id)
 	if err != nil {
 		return fmt.Errorf("mark stream live: %w", err)
@@ -102,8 +103,8 @@ WHERE id = ?;`
 func MarkStreamEnded(ctx context.Context, db *sql.DB, id string) error {
 	const q = `
 UPDATE streams
-SET status = 'ended', ended_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-WHERE id = ?;`
+SET status = 'ended', ended_at = NOW(), updated_at = NOW()
+WHERE id = $1;`
 	if _, err := db.ExecContext(ctx, q, id); err != nil {
 		return fmt.Errorf("mark stream ended: %w", err)
 	}
@@ -115,7 +116,7 @@ WHERE id = ?;`
 func ResetStaleStreams(ctx context.Context, db *sql.DB) error {
 	const q = `
 UPDATE streams
-SET status = 'ended', ended_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+SET status = 'ended', ended_at = NOW(), updated_at = NOW()
 WHERE status = 'live';`
 	_, err := db.ExecContext(ctx, q)
 	return err
@@ -123,24 +124,44 @@ WHERE status = 'live';`
 
 func scanStreamRow(row *sql.Row) (Stream, error) {
 	var s Stream
-	var hlsPath, startedAt, endedAt sql.NullString
-	if err := row.Scan(&s.ID, &s.Title, &s.StreamKey, &s.Status, &hlsPath, &startedAt, &endedAt, &s.CreatedAt, &s.UpdatedAt); err != nil {
+	var hlsPath sql.NullString
+	var startedAt, endedAt sql.NullTime
+	var createdAt, updatedAt time.Time
+
+	if err := row.Scan(&s.ID, &s.Title, &s.StreamKey, &s.Status, &hlsPath, &startedAt, &endedAt, &createdAt, &updatedAt); err != nil {
 		return Stream{}, err
 	}
+
 	s.HLSPath = nullStringToString(hlsPath)
-	s.StartedAt = nullStringToString(startedAt)
-	s.EndedAt = nullStringToString(endedAt)
+	if startedAt.Valid {
+		s.StartedAt = startedAt.Time.UTC().Format(time.RFC3339)
+	}
+	if endedAt.Valid {
+		s.EndedAt = endedAt.Time.UTC().Format(time.RFC3339)
+	}
+	s.CreatedAt = createdAt.UTC().Format(time.RFC3339)
+	s.UpdatedAt = updatedAt.UTC().Format(time.RFC3339)
 	return s, nil
 }
 
 func scanStreamRows(rows *sql.Rows) (Stream, error) {
 	var s Stream
-	var hlsPath, startedAt, endedAt sql.NullString
-	if err := rows.Scan(&s.ID, &s.Title, &s.StreamKey, &s.Status, &hlsPath, &startedAt, &endedAt, &s.CreatedAt, &s.UpdatedAt); err != nil {
+	var hlsPath sql.NullString
+	var startedAt, endedAt sql.NullTime
+	var createdAt, updatedAt time.Time
+
+	if err := rows.Scan(&s.ID, &s.Title, &s.StreamKey, &s.Status, &hlsPath, &startedAt, &endedAt, &createdAt, &updatedAt); err != nil {
 		return Stream{}, err
 	}
+
 	s.HLSPath = nullStringToString(hlsPath)
-	s.StartedAt = nullStringToString(startedAt)
-	s.EndedAt = nullStringToString(endedAt)
+	if startedAt.Valid {
+		s.StartedAt = startedAt.Time.UTC().Format(time.RFC3339)
+	}
+	if endedAt.Valid {
+		s.EndedAt = endedAt.Time.UTC().Format(time.RFC3339)
+	}
+	s.CreatedAt = createdAt.UTC().Format(time.RFC3339)
+	s.UpdatedAt = updatedAt.UTC().Format(time.RFC3339)
 	return s, nil
 }

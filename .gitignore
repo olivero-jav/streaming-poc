@@ -20,8 +20,6 @@ Thumbs.db
 coverage.out
 
 # Project runtime artifacts
-backend/streaming.db
-backend/streaming.db-*
 backend/uploads/
 backend/media/
 backend/tmp/

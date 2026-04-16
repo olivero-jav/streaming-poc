@@ -32,10 +32,13 @@ func main() {
 	initCtx, cancelInit := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelInit()
 
-	dbPath := filepath.Join(backendRoot, "streaming.db")
-	log.Printf("Using SQLite DB at %s", dbPath)
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		databaseURL = "postgres://streaming_user:streaming_pass@localhost:5432/streaming?sslmode=disable"
+	}
+	log.Printf("Connecting to PostgreSQL at %s", databaseURL)
 
-	db, err := storage.InitSQLite(initCtx, dbPath)
+	db, err := storage.InitPostgres(initCtx, databaseURL)
 	if err != nil {
 		log.Fatalf("failed to initialize storage: %v", err)
 	}

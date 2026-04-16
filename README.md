@@ -1,10 +1,10 @@
 # Streaming POC
 
-POC de streaming con arquitectura `backend` (Go + Gin + SQLite + FFmpeg) y `frontend` (Angular + Material + HLS.js).
+POC de streaming con arquitectura `backend` (Go + Gin + PostgreSQL + FFmpeg) y `frontend` (Angular + Material + HLS.js).
 
 ## Estructura
 
-- `backend/`: API, almacenamiento SQLite, transcodificacion VOD a HLS, live streaming via RTMP y serving de playlists/segmentos.
+- `backend/`: API, almacenamiento PostgreSQL, transcodificacion VOD a HLS, live streaming via RTMP y serving de playlists/segmentos.
 - `frontend/streaming-frontend/`: UI admin/public para VOD y Live.
 - `docker-compose.yml` + `mediamtx.yml`: MediaMTX como servidor RTMP para recibir streams de OBS.
 
@@ -14,9 +14,21 @@ POC de streaming con arquitectura `backend` (Go + Gin + SQLite + FFmpeg) y `fron
 - Node.js 22+
 - npm 10+
 - Docker (para MediaMTX)
+- PostgreSQL 18 instalado y corriendo
 - `ffmpeg` disponible en PATH
 - OBS (para emitir streams)
 - ngrok instalado y autenticado (`ngrok config add-authtoken <token>`) — necesario solo para el despliegue con ngrok
+
+## Setup de base de datos (primera vez)
+
+Ejecutar en `psql` como superusuario:
+
+```sql
+CREATE USER streaming_user WITH PASSWORD 'streaming_pass';
+CREATE DATABASE streaming OWNER streaming_user;
+```
+
+Las tablas se crean automáticamente al iniciar el backend.
 
 ## Levantar MediaMTX
 
@@ -35,8 +47,9 @@ go run cmd/main.go
 
 API por defecto: `http://localhost:8080`
 
-### Variables de entorno CORS
+### Variables de entorno
 
+- `DATABASE_URL`: connection string de PostgreSQL. Default: `postgres://streaming_user:streaming_pass@localhost:5432/streaming?sslmode=disable`
 - `CORS_ALLOWED_ORIGINS`: lista separada por comas de orígenes permitidos.
 - `CORS_ALLOW_NGROK=true`: permite `https://*.ngrok-free.app` y `https://*.ngrok.io`.
 
@@ -115,7 +128,7 @@ Esa URL es la que se abre en el navegador. OBS sigue apuntando a `rtmp://localho
 
 1. Subida de video desde frontend.
 2. Backend guarda archivo en `backend/uploads/`.
-3. Crea registro en SQLite (`backend/streaming.db`) con estado `pending`.
+3. Crea registro en PostgreSQL con estado `pending`.
 4. FFmpeg procesa en background:
    - `processing` -> `ready` o `error`
 5. HLS generado en `backend/media/hls/<videoId>/`.

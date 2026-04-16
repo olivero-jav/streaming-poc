@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // Video is the API-facing model for a VOD entry.
@@ -32,7 +33,7 @@ type CreateVideoInput struct {
 func CreateVideo(ctx context.Context, db *sql.DB, input CreateVideoInput) (Video, error) {
 	const insertQuery = `
 INSERT INTO videos (id, title, description, source_path)
-VALUES (?, ?, ?, ?);
+VALUES ($1, $2, $3, $4);
 `
 
 	if _, err := db.ExecContext(ctx, insertQuery, input.ID, input.Title, input.Description, input.SourcePath); err != nil {
@@ -42,7 +43,7 @@ VALUES (?, ?, ?, ?);
 	const selectQuery = `
 SELECT id, title, description, status, source_path, hls_path, duration_seconds, created_at, updated_at
 FROM videos
-WHERE id = ?;
+WHERE id = $1;
 `
 
 	video, err := scanVideoRow(db.QueryRowContext(ctx, selectQuery, input.ID))
@@ -88,7 +89,7 @@ func GetVideoByID(ctx context.Context, db *sql.DB, id string) (Video, error) {
 	const query = `
 SELECT id, title, description, status, source_path, hls_path, duration_seconds, created_at, updated_at
 FROM videos
-WHERE id = ?;
+WHERE id = $1;
 `
 
 	video, err := scanVideoRow(db.QueryRowContext(ctx, query, id))
@@ -106,8 +107,8 @@ WHERE id = ?;
 func UpdateVideoStatus(ctx context.Context, db *sql.DB, id, status string) (Video, error) {
 	const updateQuery = `
 UPDATE videos
-SET status = ?, updated_at = CURRENT_TIMESTAMP
-WHERE id = ?;
+SET status = $1, updated_at = NOW()
+WHERE id = $2;
 `
 
 	result, err := db.ExecContext(ctx, updateQuery, status, id)
@@ -135,8 +136,8 @@ WHERE id = ?;
 func SetHLSPath(ctx context.Context, db *sql.DB, id, hlsPath string) error {
 	const query = `
 UPDATE videos
-SET hls_path = ?, updated_at = CURRENT_TIMESTAMP
-WHERE id = ?;
+SET hls_path = $1, updated_at = NOW()
+WHERE id = $2;
 `
 
 	result, err := db.ExecContext(ctx, query, hlsPath, id)
@@ -159,8 +160,8 @@ WHERE id = ?;
 func MarkVideoReady(ctx context.Context, db *sql.DB, id, hlsPath string, durationSeconds int) (Video, error) {
 	const updateQuery = `
 UPDATE videos
-SET status = 'ready', hls_path = ?, duration_seconds = ?, updated_at = CURRENT_TIMESTAMP
-WHERE id = ?;
+SET status = 'ready', hls_path = $1, duration_seconds = $2, updated_at = NOW()
+WHERE id = $3;
 `
 
 	result, err := db.ExecContext(ctx, updateQuery, hlsPath, durationSeconds, id)
@@ -190,6 +191,8 @@ func scanVideoRow(row *sql.Row) (Video, error) {
 		description sql.NullString
 		sourcePath  sql.NullString
 		hlsPath     sql.NullString
+		createdAt   time.Time
+		updatedAt   time.Time
 	)
 
 	if err := row.Scan(
@@ -200,8 +203,8 @@ func scanVideoRow(row *sql.Row) (Video, error) {
 		&sourcePath,
 		&hlsPath,
 		&video.DurationSeconds,
-		&video.CreatedAt,
-		&video.UpdatedAt,
+		&createdAt,
+		&updatedAt,
 	); err != nil {
 		return Video{}, err
 	}
@@ -209,6 +212,8 @@ func scanVideoRow(row *sql.Row) (Video, error) {
 	video.Description = nullStringToString(description)
 	video.SourcePath = nullStringToString(sourcePath)
 	video.HLSPath = nullStringToString(hlsPath)
+	video.CreatedAt = createdAt.UTC().Format(time.RFC3339)
+	video.UpdatedAt = updatedAt.UTC().Format(time.RFC3339)
 
 	return video, nil
 }
@@ -219,6 +224,8 @@ func scanVideoRows(rows *sql.Rows) (Video, error) {
 		description sql.NullString
 		sourcePath  sql.NullString
 		hlsPath     sql.NullString
+		createdAt   time.Time
+		updatedAt   time.Time
 	)
 
 	if err := rows.Scan(
@@ -229,8 +236,8 @@ func scanVideoRows(rows *sql.Rows) (Video, error) {
 		&sourcePath,
 		&hlsPath,
 		&video.DurationSeconds,
-		&video.CreatedAt,
-		&video.UpdatedAt,
+		&createdAt,
+		&updatedAt,
 	); err != nil {
 		return Video{}, err
 	}
@@ -238,6 +245,8 @@ func scanVideoRows(rows *sql.Rows) (Video, error) {
 	video.Description = nullStringToString(description)
 	video.SourcePath = nullStringToString(sourcePath)
 	video.HLSPath = nullStringToString(hlsPath)
+	video.CreatedAt = createdAt.UTC().Format(time.RFC3339)
+	video.UpdatedAt = updatedAt.UTC().Format(time.RFC3339)
 
 	return video, nil
 }
@@ -246,7 +255,7 @@ func scanVideoRows(rows *sql.Rows) (Video, error) {
 // derived from a completed live stream. No transcoding step is needed because
 // the HLS files were produced during the live session.
 func CreateVideoFromStream(ctx context.Context, db *sql.DB, id, title, hlsPath string) (Video, error) {
-	const q = `INSERT INTO videos (id, title, status, hls_path) VALUES (?, ?, 'ready', ?);`
+	const q = `INSERT INTO videos (id, title, status, hls_path) VALUES ($1, $2, 'ready', $3);`
 	if _, err := db.ExecContext(ctx, q, id, title, hlsPath); err != nil {
 		return Video{}, fmt.Errorf("insert video from stream: %w", err)
 	}
