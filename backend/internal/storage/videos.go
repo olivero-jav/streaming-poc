@@ -31,26 +31,15 @@ type CreateVideoInput struct {
 
 // CreateVideo inserts a VOD entry and returns it.
 func CreateVideo(ctx context.Context, db *sql.DB, input CreateVideoInput) (Video, error) {
-	const insertQuery = `
+	const q = `
 INSERT INTO videos (id, title, description, source_path)
-VALUES ($1, $2, $3, $4);
+VALUES ($1, $2, $3, $4)
+RETURNING id, title, description, status, source_path, hls_path, duration_seconds, created_at, updated_at;
 `
-
-	if _, err := db.ExecContext(ctx, insertQuery, input.ID, input.Title, input.Description, input.SourcePath); err != nil {
+	video, err := scanVideoRow(db.QueryRowContext(ctx, q, input.ID, input.Title, input.Description, input.SourcePath))
+	if err != nil {
 		return Video{}, fmt.Errorf("insert video: %w", err)
 	}
-
-	const selectQuery = `
-SELECT id, title, description, status, source_path, hls_path, duration_seconds, created_at, updated_at
-FROM videos
-WHERE id = $1;
-`
-
-	video, err := scanVideoRow(db.QueryRowContext(ctx, selectQuery, input.ID))
-	if err != nil {
-		return Video{}, fmt.Errorf("read created video: %w", err)
-	}
-
 	return video, nil
 }
 
@@ -105,30 +94,19 @@ WHERE id = $1;
 
 // UpdateVideoStatus updates a video processing status and returns the updated row.
 func UpdateVideoStatus(ctx context.Context, db *sql.DB, id, status string) (Video, error) {
-	const updateQuery = `
+	const q = `
 UPDATE videos
 SET status = $1, updated_at = NOW()
-WHERE id = $2;
+WHERE id = $2
+RETURNING id, title, description, status, source_path, hls_path, duration_seconds, created_at, updated_at;
 `
-
-	result, err := db.ExecContext(ctx, updateQuery, status, id)
+	video, err := scanVideoRow(db.QueryRowContext(ctx, q, status, id))
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Video{}, fmt.Errorf("video not found: %w", sql.ErrNoRows)
+		}
 		return Video{}, fmt.Errorf("update video status: %w", err)
 	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return Video{}, fmt.Errorf("read updated rows count: %w", err)
-	}
-	if rowsAffected == 0 {
-		return Video{}, fmt.Errorf("video not found: %w", sql.ErrNoRows)
-	}
-
-	video, err := GetVideoByID(ctx, db, id)
-	if err != nil {
-		return Video{}, fmt.Errorf("read updated video: %w", err)
-	}
-
 	return video, nil
 }
 
@@ -158,30 +136,19 @@ WHERE id = $2;
 
 // MarkVideoReady stores output metadata and marks the video as ready.
 func MarkVideoReady(ctx context.Context, db *sql.DB, id, hlsPath string, durationSeconds int) (Video, error) {
-	const updateQuery = `
+	const q = `
 UPDATE videos
 SET status = 'ready', hls_path = $1, duration_seconds = $2, updated_at = NOW()
-WHERE id = $3;
+WHERE id = $3
+RETURNING id, title, description, status, source_path, hls_path, duration_seconds, created_at, updated_at;
 `
-
-	result, err := db.ExecContext(ctx, updateQuery, hlsPath, durationSeconds, id)
+	video, err := scanVideoRow(db.QueryRowContext(ctx, q, hlsPath, durationSeconds, id))
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Video{}, fmt.Errorf("video not found: %w", sql.ErrNoRows)
+		}
 		return Video{}, fmt.Errorf("mark video ready: %w", err)
 	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return Video{}, fmt.Errorf("read updated rows count: %w", err)
-	}
-	if rowsAffected == 0 {
-		return Video{}, fmt.Errorf("video not found: %w", sql.ErrNoRows)
-	}
-
-	video, err := GetVideoByID(ctx, db, id)
-	if err != nil {
-		return Video{}, fmt.Errorf("read updated video: %w", err)
-	}
-
 	return video, nil
 }
 
@@ -255,11 +222,16 @@ func scanVideoRows(rows *sql.Rows) (Video, error) {
 // derived from a completed live stream. No transcoding step is needed because
 // the HLS files were produced during the live session.
 func CreateVideoFromStream(ctx context.Context, db *sql.DB, id, title, hlsPath string) (Video, error) {
-	const q = `INSERT INTO videos (id, title, status, hls_path) VALUES ($1, $2, 'ready', $3);`
-	if _, err := db.ExecContext(ctx, q, id, title, hlsPath); err != nil {
+	const q = `
+INSERT INTO videos (id, title, status, hls_path)
+VALUES ($1, $2, 'ready', $3)
+RETURNING id, title, description, status, source_path, hls_path, duration_seconds, created_at, updated_at;
+`
+	video, err := scanVideoRow(db.QueryRowContext(ctx, q, id, title, hlsPath))
+	if err != nil {
 		return Video{}, fmt.Errorf("insert video from stream: %w", err)
 	}
-	return GetVideoByID(ctx, db, id)
+	return video, nil
 }
 
 func nullStringToString(v sql.NullString) string {

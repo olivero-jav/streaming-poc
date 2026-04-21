@@ -19,6 +19,7 @@ import (
 	"streaming-poc/backend/internal/process"
 	"streaming-poc/backend/internal/storage"
 
+	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -56,6 +57,7 @@ func main() {
 
 	r := gin.Default()
 	r.Use(corsMiddleware())
+	r.Use(gzip.Gzip(gzip.DefaultCompression))
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{
@@ -287,9 +289,15 @@ func main() {
 				return
 			}
 			if info, statErr := os.Stat(filePath); statErr == nil && !info.IsDir() {
+				if strings.ToLower(filepath.Ext(filePath)) == ".html" {
+					c.Header("Cache-Control", "no-cache")
+				} else {
+					c.Header("Cache-Control", "max-age=3600, public")
+				}
 				c.File(filePath)
 				return
 			}
+			c.Header("Cache-Control", "no-cache")
 			c.File(filepath.Join(distDir, "index.html"))
 		})
 		log.Printf("Serving Angular frontend from %s", distDir)
@@ -392,11 +400,14 @@ func serveHLSFile(c *gin.Context, baseDir, fileName string) {
 		return
 	}
 
+	c.Header("Accept-Ranges", "bytes")
 	switch filepath.Ext(fileName) {
 	case ".m3u8":
 		c.Header("Content-Type", "application/vnd.apple.mpegurl")
+		c.Header("Cache-Control", "max-age=2, public")
 	case ".ts":
 		c.Header("Content-Type", "video/mp2t")
+		c.Header("Cache-Control", "max-age=31536000, immutable")
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported file type"})
 		return

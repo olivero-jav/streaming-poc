@@ -32,11 +32,12 @@ const streamCols = `id, title, stream_key, status, hls_path, started_at, ended_a
 
 // CreateStream inserts a new stream record and returns it.
 func CreateStream(ctx context.Context, db *sql.DB, input CreateStreamInput) (Stream, error) {
-	const q = `INSERT INTO streams (id, title, stream_key) VALUES ($1, $2, $3);`
-	if _, err := db.ExecContext(ctx, q, input.ID, input.Title, input.StreamKey); err != nil {
+	const q = `INSERT INTO streams (id, title, stream_key) VALUES ($1, $2, $3) RETURNING ` + streamCols + `;`
+	s, err := scanStreamRow(db.QueryRowContext(ctx, q, input.ID, input.Title, input.StreamKey))
+	if err != nil {
 		return Stream{}, fmt.Errorf("insert stream: %w", err)
 	}
-	return GetStreamByID(ctx, db, input.ID)
+	return s, nil
 }
 
 // ListStreams returns all streams ordered by newest first.
