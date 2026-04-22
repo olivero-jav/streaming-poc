@@ -55,6 +55,8 @@ func main() {
 
 	registry := process.NewRegistry()
 
+	transcodeSem := make(chan struct{}, 4)
+
 	r := gin.Default()
 	r.Use(corsMiddleware())
 	r.Use(gzip.Gzip(gzip.DefaultCompression))
@@ -103,7 +105,7 @@ func main() {
 			return
 		}
 
-		go processVideoAsync(db, backendRoot, video.ID, sourcePath)
+		go processVideoAsync(db, backendRoot, video.ID, sourcePath, transcodeSem)
 
 		c.JSON(http.StatusAccepted, video)
 	})
@@ -318,7 +320,10 @@ func isValidVideoStatus(status string) bool {
 	}
 }
 
-func processVideoAsync(db *sql.DB, backendRoot, videoID, sourcePath string) {
+func processVideoAsync(db *sql.DB, backendRoot, videoID, sourcePath string, sem chan struct{}) {
+	sem <- struct{}{}
+	defer func() { <-sem }()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 

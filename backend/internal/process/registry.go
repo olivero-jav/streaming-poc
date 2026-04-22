@@ -1,8 +1,10 @@
 package process
 
 import (
+	"os"
 	"os/exec"
 	"sync"
+	"time"
 )
 
 // Registry tracks running FFmpeg processes keyed by stream key.
@@ -23,17 +25,28 @@ func (r *Registry) Register(key string, cmd *exec.Cmd) {
 	r.processes[key] = cmd
 }
 
-// Kill sends SIGKILL to the process registered under key and removes it.
+// Kill sends os.Interrupt to the process registered under key so FFmpeg can
+// finalize the current HLS segment, then forcefully kills it after 5 seconds.
 // It is a no-op if no process is registered for that key.
 func (r *Registry) Kill(key string) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	cmd, ok := r.processes[key]
-	if !ok {
+	if ok {
+		delete(r.processes, key)
+	}
+	r.mu.Unlock()
+
+	if !ok || cmd.Process == nil {
 		return
 	}
-	delete(r.processes, key)
-	if cmd.Process != nil {
+
+	if err := cmd.Process.Signal(os.Interrupt); err != nil {
 		_ = cmd.Process.Kill()
+		return
 	}
+
+	go func() {
+		time.Sleep(5 * time.Second)
+		_ = cmd.Process.Kill()
+	}()
 }

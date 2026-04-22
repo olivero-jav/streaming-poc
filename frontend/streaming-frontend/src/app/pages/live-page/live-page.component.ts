@@ -82,7 +82,7 @@ export class LivePageComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadStreams();
-    interval(5000).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.loadStreams());
+    interval(10000).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.loadStreams());
   }
 
   loadStreams(): void {

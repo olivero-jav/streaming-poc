@@ -44,7 +44,7 @@ export class VodPageComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadVideos();
-    interval(5000).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.loadVideos());
+    interval(10000).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.loadVideos());
   }
 
   loadVideos(): void {

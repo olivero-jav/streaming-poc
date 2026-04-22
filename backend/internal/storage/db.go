@@ -55,6 +55,11 @@ func InitPostgres(ctx context.Context, dsn string) (*sql.DB, error) {
 		)`,
 		`ALTER TABLE streams ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE streams ADD COLUMN IF NOT EXISTS hls_path TEXT`,
+		`CREATE INDEX IF NOT EXISTS idx_videos_status ON videos(status)`,
+		`CREATE INDEX IF NOT EXISTS idx_videos_created_at ON videos(created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_streams_stream_key ON streams(stream_key)`,
+		`CREATE INDEX IF NOT EXISTS idx_streams_created_at ON streams(created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_streams_status ON streams(status)`,
 	}
 
 	for _, stmt := range stmts {

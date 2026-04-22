@@ -38,7 +38,7 @@ export class VideoPlayerComponent implements OnChanges, OnDestroy {
     }
 
     if (Hls.isSupported()) {
-      this.hls = new Hls();
+      this.hls = new Hls({ maxBufferLength: 30, enableWorker: true });
       this.hls.loadSource(source);
       this.hls.attachMedia(video);
       return;

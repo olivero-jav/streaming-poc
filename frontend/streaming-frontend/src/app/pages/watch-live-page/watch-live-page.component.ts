@@ -26,9 +26,13 @@ export class WatchLivePageComponent implements OnInit {
   ngOnInit(): void {
     const id = this.route.snapshot.paramMap.get('id')!;
     this.loadStream(id);
-    interval(3000)
+    interval(5000)
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => this.loadStream(id));
+      .subscribe(() => {
+        if (this.stream()?.status !== 'ended') {
+          this.loadStream(id);
+        }
+      });
   }
 
   playbackUrl(): string | null {
