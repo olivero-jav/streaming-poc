@@ -6,9 +6,11 @@ This package is intentionally under `internal/` to avoid external imports.
 
 ## Files
 - `db.go`
-  - Opens SQLite (`modernc.org/sqlite`)
-  - Applies schema (`videos`, `streams`)
-  - Connection limits tuned for SQLite (`MaxOpenConns(1)`)
+  - Opens PostgreSQL via `github.com/jackc/pgx/v5/stdlib` (`sql.Open("pgx", dsn)`)
+  - Pool: `MaxOpenConns(25)`, `MaxIdleConns(5)`, `ConnMaxLifetime(5min)`
+  - Applies schema idempotente (`CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN IF NOT EXISTS` para evolución)
+  - Crea índices: `idx_videos_status`, `idx_videos_created_at`, `idx_streams_stream_key`, `idx_streams_status`, `idx_streams_created_at`
+  - CHECK constraint en `streams.status` (`pending`/`live`/`ended`)
 - `videos.go`
   - CRUD-ish helpers for VOD lifecycle:
     - `CreateVideo`
@@ -42,9 +44,13 @@ Funciones en `streams.go`:
 ## Conventions
 - Todas las funciones aceptan `context.Context`.
 - Errores wrapeados con `%w`.
-- Campos nullables convertidos con `sql.NullString`.
+- Campos nullables convertidos con `sql.NullString` / `sql.NullTime`.
+- Timestamps: `TIMESTAMPTZ NOT NULL DEFAULT NOW()` en Postgres.
+
+## Cache Coupling
+- Storage no conoce Redis. La capa API en `cmd/main.go` se encarga de invalidar las claves de cache (`videos:*`, `streams:*`) tras cada mutación.
 
 ## Known Gaps
-- Migraciones inline en `db.go` (ALTER TABLE ADD COLUMN); no hay framework de migrations.
+- Migraciones inline en `db.go` (`CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN IF NOT EXISTS`); no hay framework de migrations.
 - Sin tests de storage todavía.
-- Status de videos validados en capa API, no a nivel CHECK en DB.
+- Status de videos validados en capa API, no a nivel CHECK en DB (sí está en `streams`).

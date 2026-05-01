@@ -36,6 +36,14 @@ if (-not $env:REPORT_DIR) {
     $env:REPORT_DIR = (Join-Path $PSScriptRoot 'reports').Replace('\', '/')
 }
 
+# Contexto de la corrida (queda en setup_data del JSON de cada reporte)
+$env:GIT_COMMIT = ''
+$gitOut = & git -C "$PSScriptRoot\.." rev-parse --short HEAD 2>$null
+if ($LASTEXITCODE -eq 0 -and $gitOut) {
+    $env:GIT_COMMIT = $gitOut.Trim()
+}
+$env:HOSTNAME = $env:COMPUTERNAME
+
 # ---------------------------------------------------------------------------
 # hls-live: crea stream + publisher RTMP con FFmpeg, espera live, corre k6
 # ---------------------------------------------------------------------------

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"streaming-poc/backend/internal/cache"
 	"streaming-poc/backend/internal/process"
 	"streaming-poc/backend/internal/storage"
 
@@ -49,9 +50,21 @@ func main() {
 		}
 	}()
 
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		redisURL = "redis://localhost:6379"
+	}
+	cacheClient := cache.New(initCtx, redisURL)
+	defer func() {
+		if closeErr := cacheClient.Close(); closeErr != nil {
+			log.Printf("failed to close cache: %v", closeErr)
+		}
+	}()
+
 	if err := storage.ResetStaleStreams(initCtx, db); err != nil {
 		log.Printf("failed to reset stale streams: %v", err)
 	}
+	cacheClient.Del(initCtx, cache.KeyStreamList)
 
 	registry := process.NewRegistry()
 
@@ -59,11 +72,15 @@ func main() {
 
 	r := gin.Default()
 	r.Use(corsMiddleware())
-	r.Use(gzip.Gzip(gzip.DefaultCompression))
+	r.Use(gzip.Gzip(gzip.DefaultCompression,
+		gzip.WithExcludedExtensions([]string{".ts", ".m4s", ".mp4", ".aac"})))
 
+	backendCommit := os.Getenv("GIT_COMMIT")
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{
-			"status": "ok",
+			"status":   "ok",
+			"redis_up": cacheClient.IsConnected(),
+			"commit":   backendCommit,
 		})
 	})
 
@@ -104,24 +121,41 @@ func main() {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create video"})
 			return
 		}
+		cacheClient.Del(c.Request.Context(), cache.KeyVideoList)
 
-		go processVideoAsync(db, backendRoot, video.ID, sourcePath, transcodeSem)
+		go processVideoAsync(db, cacheClient, backendRoot, video.ID, sourcePath, transcodeSem)
 
 		c.JSON(http.StatusAccepted, video)
 	})
 
 	r.GET("/videos", func(c *gin.Context) {
-		videos, err := storage.ListVideos(c.Request.Context(), db)
+		ctx := c.Request.Context()
+		var videos []storage.Video
+		if cacheClient.GetJSON(ctx, cache.KeyVideoList, &videos) {
+			c.JSON(http.StatusOK, gin.H{"items": videos})
+			return
+		}
+
+		videos, err := storage.ListVideos(ctx, db)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list videos"})
 			return
 		}
+		cacheClient.SetJSON(ctx, cache.KeyVideoList, videos, 30*time.Second)
 
 		c.JSON(http.StatusOK, gin.H{"items": videos})
 	})
 
 	r.GET("/videos/:id", func(c *gin.Context) {
-		video, err := storage.GetVideoByID(c.Request.Context(), db, c.Param("id"))
+		ctx := c.Request.Context()
+		id := c.Param("id")
+		var video storage.Video
+		if cacheClient.GetJSON(ctx, cache.KeyVideo(id), &video) {
+			c.JSON(http.StatusOK, video)
+			return
+		}
+
+		video, err := storage.GetVideoByID(ctx, db, id)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				c.JSON(http.StatusNotFound, gin.H{"error": "video not found"})
@@ -130,6 +164,7 @@ func main() {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get video"})
 			return
 		}
+		cacheClient.SetJSON(ctx, cache.KeyVideo(id), video, 60*time.Second)
 
 		c.JSON(http.StatusOK, video)
 	})
@@ -176,20 +211,37 @@ func main() {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create stream"})
 			return
 		}
+		cacheClient.Del(c.Request.Context(), cache.KeyStreamList)
 		c.JSON(http.StatusCreated, stream)
 	})
 
 	r.GET("/streams", func(c *gin.Context) {
-		streams, err := storage.ListStreams(c.Request.Context(), db)
+		ctx := c.Request.Context()
+		var streams []storage.Stream
+		if cacheClient.GetJSON(ctx, cache.KeyStreamList, &streams) {
+			c.JSON(http.StatusOK, gin.H{"items": streams})
+			return
+		}
+
+		streams, err := storage.ListStreams(ctx, db)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list streams"})
 			return
 		}
+		cacheClient.SetJSON(ctx, cache.KeyStreamList, streams, 30*time.Second)
 		c.JSON(http.StatusOK, gin.H{"items": streams})
 	})
 
 	r.GET("/streams/:id", func(c *gin.Context) {
-		stream, err := storage.GetStreamByID(c.Request.Context(), db, c.Param("id"))
+		ctx := c.Request.Context()
+		id := c.Param("id")
+		var stream storage.Stream
+		if cacheClient.GetJSON(ctx, cache.KeyStream(id), &stream) {
+			c.JSON(http.StatusOK, stream)
+			return
+		}
+
+		stream, err := storage.GetStreamByID(ctx, db, id)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				c.JSON(http.StatusNotFound, gin.H{"error": "stream not found"})
@@ -198,6 +250,7 @@ func main() {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get stream"})
 			return
 		}
+		cacheClient.SetJSON(ctx, cache.KeyStream(id), stream, 60*time.Second)
 		c.JSON(http.StatusOK, stream)
 	})
 
@@ -215,7 +268,7 @@ func main() {
 			c.Status(http.StatusNotFound)
 			return
 		}
-		go startLiveStream(db, backendRoot, stream, registry)
+		go startLiveStream(db, cacheClient, backendRoot, stream, registry)
 		c.Status(http.StatusOK)
 	})
 
@@ -267,7 +320,8 @@ func main() {
 			return
 		}
 
-		video, err := storage.UpdateVideoStatus(c.Request.Context(), db, c.Param("id"), status)
+		id := c.Param("id")
+		video, err := storage.UpdateVideoStatus(c.Request.Context(), db, id, status)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				c.JSON(http.StatusNotFound, gin.H{"error": "video not found"})
@@ -276,6 +330,7 @@ func main() {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update video status"})
 			return
 		}
+		cacheClient.Del(c.Request.Context(), cache.KeyVideoList, cache.KeyVideo(id))
 
 		c.JSON(http.StatusOK, video)
 	})
@@ -320,7 +375,7 @@ func isValidVideoStatus(status string) bool {
 	}
 }
 
-func processVideoAsync(db *sql.DB, backendRoot, videoID, sourcePath string, sem chan struct{}) {
+func processVideoAsync(db *sql.DB, cacheClient *cache.Client, backendRoot, videoID, sourcePath string, sem chan struct{}) {
 	sem <- struct{}{}
 	defer func() { <-sem }()
 
@@ -379,6 +434,7 @@ func processVideoAsync(db *sql.DB, backendRoot, videoID, sourcePath string, sem 
 					if err := storage.SetHLSPath(ctx, db, videoID, hlsPublicPath); err != nil {
 						log.Printf("failed to set hls_path for %s: %v", videoID, err)
 					}
+					cacheClient.Del(ctx, cache.KeyVideoList, cache.KeyVideo(videoID))
 					return
 				}
 			}
@@ -396,6 +452,7 @@ func processVideoAsync(db *sql.DB, backendRoot, videoID, sourcePath string, sem 
 		_, _ = storage.UpdateVideoStatus(ctx, db, videoID, "error")
 		return
 	}
+	cacheClient.Del(ctx, cache.KeyVideoList, cache.KeyVideo(videoID))
 }
 
 func serveHLSFile(c *gin.Context, baseDir, fileName string) {
@@ -421,7 +478,7 @@ func serveHLSFile(c *gin.Context, baseDir, fileName string) {
 	c.File(targetPath)
 }
 
-func startLiveStream(db *sql.DB, backendRoot string, stream storage.Stream, registry *process.Registry) {
+func startLiveStream(db *sql.DB, cacheClient *cache.Client, backendRoot string, stream storage.Stream, registry *process.Registry) {
 	ctx := context.Background()
 
 	hlsDir := filepath.Join(backendRoot, "media", "live", stream.ID)
@@ -467,6 +524,7 @@ func startLiveStream(db *sql.DB, backendRoot string, stream storage.Stream, regi
 					if err := storage.MarkStreamLive(ctx, db, stream.ID, hlsPublicPath); err != nil {
 						log.Printf("failed to mark stream %s live: %v", stream.ID, err)
 					}
+					cacheClient.Del(ctx, cache.KeyStreamList, cache.KeyStream(stream.ID))
 					return
 				}
 			}
@@ -481,13 +539,14 @@ func startLiveStream(db *sql.DB, backendRoot string, stream storage.Stream, regi
 	if err := storage.MarkStreamEnded(ctx, db, stream.ID); err != nil {
 		log.Printf("failed to mark stream %s ended: %v", stream.ID, err)
 	}
+	cacheClient.Del(ctx, cache.KeyStreamList, cache.KeyStream(stream.ID))
 
-	go promoteStreamToVOD(db, backendRoot, stream)
+	go promoteStreamToVOD(db, cacheClient, backendRoot, stream)
 }
 
 // promoteStreamToVOD creates a ready VOD entry from the HLS files produced
 // during a live stream session. The files are served in place — no copy needed.
-func promoteStreamToVOD(db *sql.DB, backendRoot string, stream storage.Stream) {
+func promoteStreamToVOD(db *sql.DB, cacheClient *cache.Client, backendRoot string, stream storage.Stream) {
 	playlistPath := filepath.Join(backendRoot, "media", "live", stream.ID, "index.m3u8")
 	if _, err := os.Stat(playlistPath); err != nil {
 		log.Printf("promote stream %s: no HLS playlist found, skipping VOD creation", stream.ID)
@@ -500,11 +559,13 @@ func promoteStreamToVOD(db *sql.DB, backendRoot string, stream storage.Stream) {
 	}
 
 	hlsPublicPath := "/hls/live/" + stream.ID + "/index.m3u8"
-	video, err := storage.CreateVideoFromStream(context.Background(), db, uuid.NewString(), stream.Title, hlsPublicPath)
+	ctx := context.Background()
+	video, err := storage.CreateVideoFromStream(ctx, db, uuid.NewString(), stream.Title, hlsPublicPath)
 	if err != nil {
 		log.Printf("promote stream %s: failed to create VOD record: %v", stream.ID, err)
 		return
 	}
+	cacheClient.Del(ctx, cache.KeyVideoList)
 	log.Printf("stream %s promoted to VOD %s (%s)", stream.ID, video.ID, stream.Title)
 }
 

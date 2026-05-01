@@ -25,6 +25,26 @@ export const options = {
   },
 };
 
+export function setup() {
+  let backendCommit = '';
+  let redisUp = null;
+  try {
+    const h = http.get(`${base}/health`);
+    if (h.status === 200) {
+      const body = h.json();
+      backendCommit = body.commit || '';
+      if (typeof body.redis_up === 'boolean') redisUp = body.redis_up;
+    }
+  } catch (_) {}
+  return {
+    gitCommit: __ENV.GIT_COMMIT || '',
+    hostname: __ENV.HOSTNAME || '',
+    backendCommit,
+    redisUp,
+    startedAt: new Date().toISOString(),
+  };
+}
+
 function pickVideoId() {
   const res = http.get(`${base}/videos`);
   if (res.status !== 200) return null;

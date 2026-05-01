@@ -5,11 +5,13 @@ Go backend for a streaming POC with:
 - VOD upload and async processing to HLS
 - Live streaming via RTMP (MediaMTX) → HLS
 - Stream lifecycle (`pending`, `live`, `ended`)
-- SQLite persistence
+- PostgreSQL persistence (pgx/v5)
+- Redis cache (cache-aside, fail-soft)
 
 ## Current Scope
 - HTTP server in `cmd/main.go` (Gin)
-- Storage layer in `internal/storage/`
+- Storage layer in `internal/storage/` (Postgres)
+- Cache layer in `internal/cache/` (Redis, fail-soft)
 - Process registry in `internal/process/`
 - VOD endpoints:
   - `POST /videos` (multipart upload, returns `202`)
@@ -35,9 +37,10 @@ Go backend for a streaming POC with:
 ## Key Runtime Flow (VOD)
 1. Cliente sube archivo multipart.
 2. Backend guarda en `backend/uploads/`.
-3. Fila en SQLite con `status=pending`.
+3. Fila en Postgres con `status=pending`.
 4. FFmpeg async transcodifica a HLS → `backend/media/hls/{videoID}/`.
 5. Estado avanza: `processing` → `ready` (o `error`).
+6. Cada transición invalida `videos:list` + `videos:{id}` en Redis.
 
 ## Key Runtime Flow (Live)
 1. OBS/streamer conecta por RTMP a MediaMTX (`rtmp://localhost:1935/live/{streamKey}`).
@@ -49,15 +52,22 @@ Go backend for a streaming POC with:
 7. Los segmentos HLS quedan en disco (no se borran); el stream es reproducible post-ended.
 
 ## Data Model Notes
-- `videos`: estado de procesamiento + metadata HLS.
-- `streams`: title, stream_key (RTMP), status, hls_path, started_at, ended_at. No tiene FK a videos.
+- `videos`: estado de procesamiento + metadata HLS. Indexado por `status` y `created_at DESC`.
+- `streams`: title, stream_key (RTMP), status, hls_path, started_at, ended_at. No tiene FK a videos. Indexado por `stream_key`, `status` y `created_at DESC`. CHECK constraint en status.
+
+## Cache Layer
+- Redis cache-aside con TTLs cortos (30s listas, 60s ítems). Claves: `videos:list`, `videos:{id}`, `streams:list`, `streams:{id}`.
+- Fail-soft: si `REDIS_URL` falla o el ping no responde, el cliente queda nil y todas las operaciones son no-op. El backend sigue sirviendo desde Postgres sin Redis.
+- Invalidación explícita en cada mutación (create/update/status changes/lifecycle transitions).
+- Sin persistencia en Redis (RAM-only, sin volumen): Postgres es la fuente de verdad.
 
 ## Operational Notes
 - `ffmpeg` debe estar en PATH.
 - MediaMTX debe estar corriendo y configurado para llamar los hooks.
 - Runtime paths resueltos desde `cmd/main.go` via `runtime.Caller`.
-- Al iniciar, `ResetStaleStreams` pasa streams `live` a `ended` (limpieza de crashes previos).
+- Al iniciar, `ResetStaleStreams` pasa streams `live` a `ended` (limpieza de crashes previos) y se invalida `streams:list` en Redis.
 - `PATCH /videos/:id/status` sin auth; aceptable para POC local.
+- Env vars: `DATABASE_URL` (default `postgres://streaming_user:streaming_pass@localhost:5432/streaming?sslmode=disable`), `REDIS_URL` (default `redis://localhost:6379`).
 
 ## Near-Term TODOs
 - Usar `ffprobe` para persistir `duration_seconds` real en videos.

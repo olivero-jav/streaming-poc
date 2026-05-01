@@ -5,3 +5,8 @@ services:
       - "1935:1935"
     volumes:
       - ./mediamtx.yml:/mediamtx.yml
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"

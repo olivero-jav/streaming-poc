@@ -28,7 +28,27 @@ export function setup() {
   if (res.status !== 200) {
     throw new Error(`Playlist VOD no disponible: GET ${url} -> ${res.status}`);
   }
-  return { videoId };
+  return { videoId, ...runContext() };
+}
+
+function runContext() {
+  let backendCommit = '';
+  let redisUp = null;
+  try {
+    const h = http.get(`${base}/health`);
+    if (h.status === 200) {
+      const body = h.json();
+      backendCommit = body.commit || '';
+      if (typeof body.redis_up === 'boolean') redisUp = body.redis_up;
+    }
+  } catch (_) {}
+  return {
+    gitCommit: __ENV.GIT_COMMIT || '',
+    hostname: __ENV.HOSTNAME || '',
+    backendCommit,
+    redisUp,
+    startedAt: new Date().toISOString(),
+  };
 }
 
 function segmentNamesFromM3U8(body) {

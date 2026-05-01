@@ -2,19 +2,23 @@
 
 ## Purpose
 `cmd/main.go` wires the app:
-- initializes SQLite (+ reset de streams stale)
+- initializes Postgres (`DATABASE_URL`) y Redis cache (`REDIS_URL`, fail-soft)
+- ejecuta `ResetStaleStreams` y limpia `streams:list` del cache
 - crea el process registry
-- registra todas las rutas HTTP
+- registra todas las rutas HTTP (con gzip middleware)
 - arranca Gin en `:8080`
 
 ## Design Choices
 - Single-file bootstrap para velocidad de POC.
-- Lógica de negocio/datos delegada a `internal/storage` e `internal/process`.
-- FFmpeg VOD arranca en goroutine tras el upload.
+- Lógica de negocio/datos delegada a `internal/storage`, `internal/cache` e `internal/process`.
+- Cache-aside en lecturas (`GET /videos`, `GET /videos/:id`, `GET /streams`, `GET /streams/:id`) con TTLs 30s/60s.
+- Invalidación explícita del cache tras cada mutación (create, status update, lifecycle transitions live/ended, promoción a VOD).
+- FFmpeg VOD arranca en goroutine tras el upload (con `transcodeSem` que limita a 4 transcodings concurrentes).
 - FFmpeg Live arranca en goroutine cuando MediaMTX llama el hook publish.
 - Al terminar un stream, `promoteStreamToVOD` crea automáticamente un VOD apuntando a los archivos HLS live existentes (sin retranscoding ni copia). `finalizeHLSPlaylist` añade `#EXT-X-ENDLIST` si FFmpeg fue killado sin cerrarse limpiamente.
 - Runtime paths anclados al backend root via `runtime.Caller`.
 - CORS middleware local permite frontend en `:4200`.
+- Cache-Control headers diferenciados: HLS playlists `no-cache`, segmentos `max-age=3600`, assets estáticos del frontend `max-age=31536000, immutable`.
 
 ## Important Routes
 - Health: `GET /health`
