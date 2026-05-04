@@ -30,6 +30,18 @@ func InitPostgres(ctx context.Context, dsn string) (*sql.DB, error) {
 		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
 
+	if err := applySchema(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
+	return db, nil
+}
+
+// applySchema creates the tables and indexes required by the storage layer.
+// Idempotent: safe to call against an already-initialized database. Used by
+// InitPostgres at startup and by tests that bootstrap a temporary schema.
+func applySchema(ctx context.Context, db *sql.DB) error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS videos (
 			id TEXT PRIMARY KEY,
@@ -64,10 +76,9 @@ func InitPostgres(ctx context.Context, dsn string) (*sql.DB, error) {
 
 	for _, stmt := range stmts {
 		if _, err := db.ExecContext(ctx, stmt); err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("initialize postgres schema: %w", err)
+			return fmt.Errorf("initialize postgres schema: %w", err)
 		}
 	}
 
-	return db, nil
+	return nil
 }

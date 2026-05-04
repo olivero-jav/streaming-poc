@@ -165,6 +165,26 @@ STREAM_ID=  # requerido para hls-live
 
 Los reportes HTML y JSON se generan en `testing/reports/`.
 
+## Tests Go
+
+**Unit tests del storage** (Postgres real contra schemas temporales aislados por test):
+
+```powershell
+cd backend
+go test ./...
+```
+
+Cada test crea un schema único en la base configurada por `TEST_DATABASE_URL` (default igual a `DATABASE_URL`), corre contra él y lo dropea en cleanup. Si Postgres no está accesible los tests se skipean en vez de fallar.
+
+**Smoke test e2e de VOD** (sube el fixture, espera transcoding, valida playlist y segmentos):
+
+```powershell
+cd backend
+go test -tags=e2e ./internal/e2etest/...
+```
+
+Está bajo el build tag `e2e` para que no corra en `go test ./...`. Requiere backend + Postgres + ffmpeg en PATH. Usa el fixture en `testing/fixtures/sample.mp4` y deja un registro `e2e-vod-<timestamp>` por corrida (no hay cleanup automático).
+
 ## Notas
 
 - Los segmentos HLS de streams terminados no se eliminan; los streams `ended` son reproducibles.

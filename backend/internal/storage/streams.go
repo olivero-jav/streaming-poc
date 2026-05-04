@@ -100,14 +100,20 @@ WHERE id = $2;`
 	return nil
 }
 
-// MarkStreamEnded transitions the stream to ended status.
+// MarkStreamEnded transitions the stream to ended status. Returns a wrapped
+// sql.ErrNoRows when no row matches the given id, mirroring MarkStreamLive.
 func MarkStreamEnded(ctx context.Context, db *sql.DB, id string) error {
 	const q = `
 UPDATE streams
 SET status = 'ended', ended_at = NOW(), updated_at = NOW()
 WHERE id = $1;`
-	if _, err := db.ExecContext(ctx, q, id); err != nil {
+	result, err := db.ExecContext(ctx, q, id)
+	if err != nil {
 		return fmt.Errorf("mark stream ended: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("stream not found: %w", sql.ErrNoRows)
 	}
 	return nil
 }
