@@ -6,13 +6,16 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"mime/multipart"
 	"net/url"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +27,18 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
+
+const defaultMaxUploadBytes int64 = 500 << 20 // 500 MB
+
+// allowedVideoMimes are the MIME types accepted by POST /videos. The list
+// matches what http.DetectContentType returns for typical video files; MKV
+// is intentionally excluded because Go's stdlib detection is unreliable for
+// it (often falls back to application/octet-stream).
+var allowedVideoMimes = map[string]bool{
+	"video/mp4":       true,
+	"video/webm":      true,
+	"video/quicktime": true,
+}
 
 func main() {
 	backendRoot, err := resolveBackendRoot()
@@ -70,6 +85,17 @@ func main() {
 
 	transcodeSem := make(chan struct{}, 4)
 
+	maxUploadBytes := defaultMaxUploadBytes
+	if raw := os.Getenv("MAX_UPLOAD_BYTES"); raw != "" {
+		parsed, parseErr := strconv.ParseInt(raw, 10, 64)
+		if parseErr != nil || parsed <= 0 {
+			log.Printf("invalid MAX_UPLOAD_BYTES=%q, falling back to %d", raw, defaultMaxUploadBytes)
+		} else {
+			maxUploadBytes = parsed
+		}
+	}
+	log.Printf("upload size cap: %d bytes (~%d MB)", maxUploadBytes, maxUploadBytes>>20)
+
 	r := gin.Default()
 	r.Use(corsMiddleware())
 	r.Use(gzip.Gzip(gzip.DefaultCompression,
@@ -84,7 +110,23 @@ func main() {
 		})
 	})
 
-	r.POST("/videos", func(c *gin.Context) {
+	r.POST("/videos", limitUploadSize(maxUploadBytes), func(c *gin.Context) {
+		// Force multipart parse up front so a MaxBytesReader trip surfaces
+		// as 413 instead of being swallowed by Gin's PostForm (which would
+		// return "" and make the handler look like "title is required").
+		if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err, &maxBytesErr) {
+				c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+					"error":       fmt.Sprintf("upload exceeds the %d MB limit", maxUploadBytes>>20),
+					"limit_bytes": maxUploadBytes,
+				})
+				return
+			}
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid multipart form"})
+			return
+		}
+
 		title := strings.TrimSpace(c.PostForm("title"))
 		description := c.PostForm("description")
 		if title == "" {
@@ -95,6 +137,20 @@ func main() {
 		fileHeader, err := c.FormFile("file")
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "file is required"})
+			return
+		}
+
+		mime, err := detectVideoMime(fileHeader)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read uploaded file"})
+			return
+		}
+		if !allowedVideoMimes[mime] {
+			c.JSON(http.StatusUnsupportedMediaType, gin.H{
+				"error":         "unsupported video format",
+				"detected_mime": mime,
+				"allowed":       []string{"video/mp4", "video/webm", "video/quicktime"},
+			})
 			return
 		}
 
@@ -668,4 +724,33 @@ func isAllowedOrigin(origin string, allowedOrigins map[string]struct{}, allowNgr
 
 	host := strings.ToLower(parsedOrigin.Hostname())
 	return strings.HasSuffix(host, ".ngrok-free.app") || strings.HasSuffix(host, ".ngrok.io")
+}
+
+// limitUploadSize wraps the request body with http.MaxBytesReader so that any
+// upload larger than max bytes is rejected before it can be parsed. Trips with
+// *http.MaxBytesError, which the handler translates to a 413 response.
+func limitUploadSize(max int64) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, max)
+		c.Next()
+	}
+}
+
+// detectVideoMime reads the first 512 bytes of the uploaded file and runs
+// http.DetectContentType against them. Stronger than checking the filename
+// extension or the multipart Content-Type header because both are trivially
+// spoofed by the client; magic bytes live in the actual content.
+func detectVideoMime(fileHeader *multipart.FileHeader) (string, error) {
+	f, err := fileHeader.Open()
+	if err != nil {
+		return "", fmt.Errorf("open uploaded file: %w", err)
+	}
+	defer f.Close()
+
+	buf := make([]byte, 512)
+	n, err := io.ReadFull(f, buf)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return "", fmt.Errorf("read header bytes: %w", err)
+	}
+	return http.DetectContentType(buf[:n]), nil
 }

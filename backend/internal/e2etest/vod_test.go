@@ -82,6 +82,116 @@ func TestVODHappyPath(t *testing.T) {
 	fetchSegment(t, base, id, segment)
 }
 
+// zeroReader emits an unbounded stream of zero bytes. Used as the source for
+// a streaming oversize-upload test so the test does not buffer hundreds of
+// megabytes in RAM.
+type zeroReader struct{}
+
+func (zeroReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 0
+	}
+	return len(p), nil
+}
+
+// TestVODRejectsOversizeUpload streams a body larger than the server cap
+// (default 500 MB) and expects the request to fail with 413 or a server-side
+// connection close — both indicate the MaxBytesReader middleware tripped.
+func TestVODRejectsOversizeUpload(t *testing.T) {
+	base := baseURL()
+	requireBackend(t, base)
+
+	// 600 MB of zeros — comfortably above the default 500 MB cap.
+	const payloadBytes int64 = 600 << 20
+
+	pr, pw := io.Pipe()
+	mw := multipart.NewWriter(pw)
+
+	go func() {
+		defer pw.Close()
+		defer mw.Close()
+		if err := mw.WriteField("title", fmt.Sprintf("e2e-big-%d", time.Now().Unix())); err != nil {
+			return
+		}
+		fw, err := mw.CreateFormFile("file", "huge.mp4")
+		if err != nil {
+			return
+		}
+		// Ignore write errors: once the server-side cap trips it closes the
+		// connection, which surfaces as a write error here. That is the
+		// expected outcome, not a test failure.
+		_, _ = io.CopyN(fw, zeroReader{}, payloadBytes)
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/videos", pr)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	start := time.Now()
+	resp, err := http.DefaultClient.Do(req)
+	elapsed := time.Since(start)
+	if err != nil {
+		// The server can close the connection mid-stream once the cap trips,
+		// which is a legitimate signal that the limit worked.
+		t.Logf("request failed after %s (likely server-side close): %v", elapsed, err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		raw, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 413 for oversize upload, got %d: %s", resp.StatusCode, string(raw))
+	}
+	t.Logf("server returned 413 after %s of streaming", elapsed)
+}
+
+// TestVODRejectsNonVideo posts a plain-text payload disguised as `fake.mp4`
+// and expects a 415 from the magic-bytes validation. Verifies that the
+// extension/filename alone is not enough to fool the upload endpoint.
+func TestVODRejectsNonVideo(t *testing.T) {
+	base := baseURL()
+	requireBackend(t, base)
+
+	body := &bytes.Buffer{}
+	w := multipart.NewWriter(body)
+	if err := w.WriteField("title", fmt.Sprintf("e2e-bad-%d", time.Now().Unix())); err != nil {
+		t.Fatalf("write title field: %v", err)
+	}
+	fw, err := w.CreateFormFile("file", "fake.mp4")
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	if _, err := fw.Write([]byte("This is plain text, not a video. The .mp4 extension is a lie.")); err != nil {
+		t.Fatalf("write fake content: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/videos", body)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	req.Header.Set("Content-Type", w.FormDataContentType())
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /videos: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnsupportedMediaType {
+		raw, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 415 for non-video upload, got %d: %s", resp.StatusCode, string(raw))
+	}
+}
+
 // uploadFixture posts the sample.mp4 to /videos and returns the new video ID.
 func uploadFixture(t *testing.T, base string) string {
 	t.Helper()
