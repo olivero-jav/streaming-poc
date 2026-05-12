@@ -12,8 +12,8 @@
 - `NavComponent`: topbar con tabs VOD y Live
 - `VodPageComponent`: admin VOD (player + grid + upload drawer)
 - `WatchVodPageComponent`: vista pública VOD
-- `LivePageComponent`: admin Live (lista streams, crea stream, muestra stream key, reproduce inline)
-- `WatchLivePageComponent`: vista pública de un stream (polling 3s)
+- `LivePageComponent`: admin Live (lista streams, crea stream, muestra stream key, reproduce inline; polling 10s)
+- `WatchLivePageComponent`: vista pública de un stream (polling 5s)
 - `UploadDrawerComponent`: formulario de subida de video
 - `VideoPlayerComponent`: wrapper reutilizable de hls.js
 
@@ -28,7 +28,7 @@
 4. `VideoPlayerComponent` reproduce via `hls.js`.
 
 ## Data Flow (Live)
-1. `StreamApiService.listStreams()` puebla `LivePage` (polling cada 5s).
+1. `StreamApiService.listStreams()` puebla `LivePage` (polling cada 10s). `VodPage` también hace polling cada 10s.
 2. `LivePage` auto-selecciona el primer stream `live` con `hls_path`.
 3. `resolvePlaybackUrl()` convierte `hls_path` relativo a URL absoluta.
 4. `VideoPlayerComponent` reproduce el HLS live/ended.

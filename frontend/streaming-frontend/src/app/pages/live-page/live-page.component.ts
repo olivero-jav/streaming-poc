@@ -3,6 +3,7 @@ import {
   Component,
   DestroyRef,
   OnInit,
+  computed,
   inject,
   signal,
 } from '@angular/core';
@@ -18,7 +19,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { interval } from 'rxjs';
 import { NavComponent } from '../../components/nav/nav.component';
-import { VideoPlayerComponent } from '../../components/video-player/video-player.component';
+import { PlayerMode, VideoPlayerComponent } from '../../components/video-player/video-player.component';
 import { StreamItem } from '../../models/stream.model';
 import { StreamApiService } from '../../services/stream-api.service';
 
@@ -79,6 +80,7 @@ export class LivePageComponent implements OnInit {
   selectedStream = signal<StreamItem | null>(null);
   loading = signal(false);
   error = signal<string | null>(null);
+  playerMode = computed<PlayerMode>(() => (this.selectedStream()?.status === 'live' ? 'live' : 'vod'));
 
   ngOnInit(): void {
     this.loadStreams();

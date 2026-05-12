@@ -3,7 +3,7 @@
 
   <section class="player-area">
     @if (selectedStream()?.hls_path) {
-      <app-video-player [src]="playbackUrl(selectedStream())" />
+      <app-video-player [src]="playbackUrl(selectedStream())" [mode]="playerMode()" />
     } @else {
       <div class="player-placeholder">
         @if (selectedStream()?.status === 'pending') {

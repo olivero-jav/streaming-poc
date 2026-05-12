@@ -9,12 +9,13 @@ Go backend for a streaming POC with:
 - Redis cache (cache-aside, fail-soft)
 
 ## Current Scope
-- HTTP server in `cmd/main.go` (Gin)
-- Storage layer in `internal/storage/` (Postgres)
+- HTTP server in `cmd/main.go` (Gin, con gzip middleware excluyendo `.ts/.m4s/.mp4/.aac`)
+- Storage layer in `internal/storage/` (Postgres) — con unit tests contra Postgres real y e2e test bajo build tag
 - Cache layer in `internal/cache/` (Redis, fail-soft)
 - Process registry in `internal/process/`
+- `GET /health` devuelve `{status, redis_up, commit}` (commit viene de env `GIT_COMMIT`)
 - VOD endpoints:
-  - `POST /videos` (multipart upload, returns `202`)
+  - `POST /videos` (multipart upload, returns `202`). Valida MIME real (`mp4/webm/quicktime`, mkv rechazado) leyendo magic bytes; `MaxBytesReader` con cap `MAX_UPLOAD_BYTES` (default 500MB) → 413 si excede.
   - `GET /videos`
   - `GET /videos/:id`
   - `PATCH /videos/:id/status` (internal-use; currently unauthenticated)
@@ -67,10 +68,10 @@ Go backend for a streaming POC with:
 - Runtime paths resueltos desde `cmd/main.go` via `runtime.Caller`.
 - Al iniciar, `ResetStaleStreams` pasa streams `live` a `ended` (limpieza de crashes previos) y se invalida `streams:list` en Redis.
 - `PATCH /videos/:id/status` sin auth; aceptable para POC local.
-- Env vars: `DATABASE_URL` (default `postgres://streaming_user:streaming_pass@localhost:5432/streaming?sslmode=disable`), `REDIS_URL` (default `redis://localhost:6379`).
+- Env vars: `DATABASE_URL` (default `postgres://streaming_user:streaming_pass@localhost:5432/streaming?sslmode=disable`), `REDIS_URL` (default `redis://localhost:6379`), `MAX_UPLOAD_BYTES` (default 500MB), `CORS_ALLOWED_ORIGINS` (CSV), `CORS_ALLOW_NGROK=true`, `GIT_COMMIT`, `TEST_DATABASE_URL` (tests).
 
 ## Near-Term TODOs
 - Usar `ffprobe` para persistir `duration_seconds` real en videos.
 - Agregar chequeo de dependencias (ffmpeg/ffprobe) al startup.
 - Los segmentos live no se limpian al terminar el stream; evaluar cleanup o conversión a VOD.
-- Agregar tests para handlers y transiciones de storage.
+- Agregar tests para handlers HTTP (storage ya tiene unit tests + e2e VOD bajo build tag `e2e`).

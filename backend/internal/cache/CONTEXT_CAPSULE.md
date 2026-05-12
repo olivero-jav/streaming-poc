@@ -11,6 +11,7 @@ Wrapper minimalista sobre Redis (`github.com/redis/go-redis/v9`) para cache-asid
   - `SetJSON(ctx, key, value, ttl)` — marshalea y setea con TTL; loggea y sigue si falla.
   - `Del(ctx, keys...)` — borra una o varias claves.
   - `Close()` — idempotente.
+  - `IsConnected()` — `true` si hay conexión Redis viva; `false` en modo fail-soft. Lo consume `/health` para reportar `redis_up`.
 
 ## Fail-soft Contract
 Si `rdb` es `nil`, todas las operaciones son no-op:

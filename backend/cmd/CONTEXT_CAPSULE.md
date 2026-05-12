@@ -14,6 +14,7 @@
 - Cache-aside en lecturas (`GET /videos`, `GET /videos/:id`, `GET /streams`, `GET /streams/:id`) con TTLs 30s/60s.
 - Invalidación explícita del cache tras cada mutación (create, status update, lifecycle transitions live/ended, promoción a VOD).
 - FFmpeg VOD arranca en goroutine tras el upload (con `transcodeSem` que limita a 4 transcodings concurrentes).
+- Upload validado a nivel de bytes: `MaxBytesReader` con cap `MAX_UPLOAD_BYTES` (default 500MB) → 413, y `detectVideoMime` lee los primeros 512 bytes y los pasa por `http.DetectContentType` (acepta `mp4/webm/quicktime`; mkv excluido porque stdlib lo detecta mal).
 - FFmpeg Live arranca en goroutine cuando MediaMTX llama el hook publish.
 - Al terminar un stream, `promoteStreamToVOD` crea automáticamente un VOD apuntando a los archivos HLS live existentes (sin retranscoding ni copia). `finalizeHLSPlaylist` añade `#EXT-X-ENDLIST` si FFmpeg fue killado sin cerrarse limpiamente.
 - Runtime paths anclados al backend root via `runtime.Caller`.
@@ -21,7 +22,7 @@
 - Cache-Control headers diferenciados: HLS playlists `no-cache`, segmentos `max-age=3600`, assets estáticos del frontend `max-age=31536000, immutable`.
 
 ## Important Routes
-- Health: `GET /health`
+- Health: `GET /health` → `{status, redis_up, commit}` (`commit` desde env `GIT_COMMIT`)
 - Videos:
   - `POST /videos` (multipart: `title`, optional `description`, required `file`)
   - `GET /videos`

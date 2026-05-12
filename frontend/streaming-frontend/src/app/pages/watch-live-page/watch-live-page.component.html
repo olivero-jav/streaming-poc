@@ -3,7 +3,7 @@
     <p class="error">{{ error() }}</p>
   } @else if (stream(); as s) {
     @if (s.status === 'live' && s.hls_path) {
-      <app-video-player [src]="playbackUrl()" />
+      <app-video-player [src]="playbackUrl()" mode="live" />
       <h1>{{ s.title }}</h1>
     } @else if (s.status === 'pending') {
       <div class="state-screen">

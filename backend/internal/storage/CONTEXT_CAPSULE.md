@@ -50,7 +50,10 @@ Funciones en `streams.go`:
 ## Cache Coupling
 - Storage no conoce Redis. La capa API en `cmd/main.go` se encarga de invalidar las claves de cache (`videos:*`, `streams:*`) tras cada mutación.
 
+## Tests
+- Unit tests en `videos_test.go`, `streams_test.go` con `testhelper_test.go`. Cada test crea un schema único en `TEST_DATABASE_URL` (default = `DATABASE_URL`), corre contra él y lo dropea en cleanup; si Postgres no está accesible, los tests se skipean.
+- E2E VOD en `../e2etest/vod_test.go` bajo build tag `e2e` (requiere backend + Postgres + ffmpeg corriendo).
+
 ## Known Gaps
 - Migraciones inline en `db.go` (`CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN IF NOT EXISTS`); no hay framework de migrations.
-- Sin tests de storage todavía.
 - Status de videos validados en capa API, no a nivel CHECK en DB (sí está en `streams`).

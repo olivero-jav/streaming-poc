@@ -27,3 +27,7 @@ backend/logs/
 
 # k6 load test reports
 testing/reports/
+
+# HLS latency probe
+testing/hls-latency/node_modules/
+testing/hls-latency/results/

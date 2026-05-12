@@ -16,7 +16,7 @@ Implementado:
 - HLS playback via `hls.js`
 
 ## Important Integration Rules
-- `API_BASE_URL` hardcodeado (mover a environments para staging/ngrok).
+- `API_BASE_URL` se resuelve en runtime con `resolveApiBaseUrl()` (en `video-api.service.ts`): `http://localhost:8080` cuando `hostname` es `localhost`/`127.0.0.1`, y `window.location.origin` en cualquier otro caso (ngrok/prod, donde el mismo backend Go sirve el build de Angular).
 - Backend retorna `hls_path` como ruta relativa; frontend la convierte a URL absoluta antes del player.
 - `StreamApiService.resolvePlaybackUrl()` maneja tanto rutas relativas como absolutas.
 
@@ -25,11 +25,10 @@ Implementado:
 - Tab Live habilitado y funcional.
 - Solo videos con `status=ready` son seleccionables/clicables en VOD.
 - Upload FAB se oculta mientras el drawer está abierto.
-- Live page hace polling cada 5s para actualizar la lista de streams.
-- Watch Live page hace polling cada 3s para refrescar estado del stream.
+- VOD page y Live page hacen polling cada 10s para refrescar la lista.
+- Watch Live page hace polling cada 5s para refrescar estado del stream.
 - Streams `ended` son reproducibles (segmentos HLS quedan en disco).
 
 ## Known Risks / Follow-ups
-- `API_BASE_URL` hardcodeado (mover a environments).
 - Sin banner global de "backend offline".
 - Rutas públicas sin auth por diseño en POC.
