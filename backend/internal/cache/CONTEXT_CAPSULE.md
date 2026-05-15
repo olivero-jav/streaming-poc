@@ -32,7 +32,7 @@ Esto permite que el backend siga funcionando sin Redis (POC). No usar este paque
 3. `cacheClient.SetJSON(ctx, key, dest, ttl)`.
 4. En toda mutación, `cacheClient.Del(ctx, listKey, itemKey)`.
 
-TTLs vigentes en `cmd/main.go`: 30s para listas, 60s para ítems individuales.
+TTLs vigentes (definidos en `internal/handlers/videos.go` y `internal/handlers/streams.go`): 30s para listas, 60s para ítems individuales.
 
 ## Design Choices
 - JSON como encoding (no msgpack/proto): debug fácil con `redis-cli GET`.

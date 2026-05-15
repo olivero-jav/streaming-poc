@@ -7,8 +7,8 @@ Angular frontend para un POC de streaming VOD + Live.
 Implementado:
 - Admin route: `/app/vod` — lista videos, selecciona `ready` para reproducir, sube videos con drawer
 - Public route: `/watch/vod/:id` — vista de reproducción
-- Admin route: `/app/live` — lista streams, crea streams, muestra stream key para OBS, reproduce live/ended inline
-- Public route: `/watch/live/:id` — vista de reproducción de un stream (polling cada 3s)
+- Admin route: `/app/live` — lista streams, crea streams (Material dialog), muestra stream key para OBS, reproduce live/ended inline
+- Public route: `/watch/live/:id` — vista de reproducción de un stream (polling cada 5s, frena cuando `status=ended`)
 
 ## Runtime Dependencies
 - Frontend dev server: `http://localhost:4200`
@@ -18,7 +18,7 @@ Implementado:
 ## Important Integration Rules
 - `API_BASE_URL` se resuelve en runtime con `resolveApiBaseUrl()` (en `video-api.service.ts`): `http://localhost:8080` cuando `hostname` es `localhost`/`127.0.0.1`, y `window.location.origin` en cualquier otro caso (ngrok/prod, donde el mismo backend Go sirve el build de Angular).
 - Backend retorna `hls_path` como ruta relativa; frontend la convierte a URL absoluta antes del player.
-- `StreamApiService.resolvePlaybackUrl()` maneja tanto rutas relativas como absolutas.
+- La normalización vive en `app/utils/playback-url.ts` (con tests en `playback-url.spec.ts`). Rechaza `javascript:`/`data:`, protocol-relative, host distinto al backend, paths fuera de `/hls/`, y traversal. `VideoApiService` y `StreamApiService` la consumen por separado.
 
 ## UX Rules Currently Enforced
 - UI en español.

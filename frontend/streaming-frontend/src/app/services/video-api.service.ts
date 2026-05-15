@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { VideoItem, VideoListResponse } from '../models/video.model';
+import { resolvePlaybackUrl as resolvePlaybackUrlUtil } from '../utils/playback-url';
 
 function resolveApiBaseUrl(): string {
   const { hostname } = window.location;
@@ -37,12 +38,6 @@ export class VideoApiService {
   }
 
   resolvePlaybackUrl(hlsPath?: string): string | null {
-    if (!hlsPath) {
-      return null;
-    }
-    if (hlsPath.startsWith('http://') || hlsPath.startsWith('https://')) {
-      return hlsPath;
-    }
-    return `${API_BASE_URL}${hlsPath.startsWith('/') ? '' : '/'}${hlsPath}`;
+    return resolvePlaybackUrlUtil(hlsPath, API_BASE_URL);
   }
 }

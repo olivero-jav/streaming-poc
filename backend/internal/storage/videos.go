@@ -29,6 +29,12 @@ type CreateVideoInput struct {
 	SourcePath  string
 }
 
+// rowScanner is implemented by both *sql.Row and *sql.Rows so scan helpers
+// can be shared between single-row and multi-row queries.
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
 // CreateVideo inserts a VOD entry and returns it.
 func CreateVideo(ctx context.Context, db *sql.DB, input CreateVideoInput) (Video, error) {
 	const q = `
@@ -36,7 +42,7 @@ INSERT INTO videos (id, title, description, source_path)
 VALUES ($1, $2, $3, $4)
 RETURNING id, title, description, status, source_path, hls_path, duration_seconds, created_at, updated_at;
 `
-	video, err := scanVideoRow(db.QueryRowContext(ctx, q, input.ID, input.Title, input.Description, input.SourcePath))
+	video, err := scanVideo(db.QueryRowContext(ctx, q, input.ID, input.Title, input.Description, input.SourcePath))
 	if err != nil {
 		return Video{}, fmt.Errorf("insert video: %w", err)
 	}
@@ -59,7 +65,7 @@ ORDER BY created_at DESC;
 
 	videos := make([]Video, 0)
 	for rows.Next() {
-		video, scanErr := scanVideoRows(rows)
+		video, scanErr := scanVideo(rows)
 		if scanErr != nil {
 			return nil, fmt.Errorf("scan video row: %w", scanErr)
 		}
@@ -81,7 +87,7 @@ FROM videos
 WHERE id = $1;
 `
 
-	video, err := scanVideoRow(db.QueryRowContext(ctx, query, id))
+	video, err := scanVideo(db.QueryRowContext(ctx, query, id))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Video{}, fmt.Errorf("video not found: %w", err)
@@ -100,7 +106,7 @@ SET status = $1, updated_at = NOW()
 WHERE id = $2
 RETURNING id, title, description, status, source_path, hls_path, duration_seconds, created_at, updated_at;
 `
-	video, err := scanVideoRow(db.QueryRowContext(ctx, q, status, id))
+	video, err := scanVideo(db.QueryRowContext(ctx, q, status, id))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Video{}, fmt.Errorf("video not found: %w", sql.ErrNoRows)
@@ -142,7 +148,7 @@ SET status = 'ready', hls_path = $1, duration_seconds = $2, updated_at = NOW()
 WHERE id = $3
 RETURNING id, title, description, status, source_path, hls_path, duration_seconds, created_at, updated_at;
 `
-	video, err := scanVideoRow(db.QueryRowContext(ctx, q, hlsPath, durationSeconds, id))
+	video, err := scanVideo(db.QueryRowContext(ctx, q, hlsPath, durationSeconds, id))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Video{}, fmt.Errorf("video not found: %w", sql.ErrNoRows)
@@ -152,7 +158,7 @@ RETURNING id, title, description, status, source_path, hls_path, duration_second
 	return video, nil
 }
 
-func scanVideoRow(row *sql.Row) (Video, error) {
+func scanVideo(s rowScanner) (Video, error) {
 	var (
 		video       Video
 		description sql.NullString
@@ -162,40 +168,7 @@ func scanVideoRow(row *sql.Row) (Video, error) {
 		updatedAt   time.Time
 	)
 
-	if err := row.Scan(
-		&video.ID,
-		&video.Title,
-		&description,
-		&video.Status,
-		&sourcePath,
-		&hlsPath,
-		&video.DurationSeconds,
-		&createdAt,
-		&updatedAt,
-	); err != nil {
-		return Video{}, err
-	}
-
-	video.Description = nullStringToString(description)
-	video.SourcePath = nullStringToString(sourcePath)
-	video.HLSPath = nullStringToString(hlsPath)
-	video.CreatedAt = createdAt.UTC().Format(time.RFC3339)
-	video.UpdatedAt = updatedAt.UTC().Format(time.RFC3339)
-
-	return video, nil
-}
-
-func scanVideoRows(rows *sql.Rows) (Video, error) {
-	var (
-		video       Video
-		description sql.NullString
-		sourcePath  sql.NullString
-		hlsPath     sql.NullString
-		createdAt   time.Time
-		updatedAt   time.Time
-	)
-
-	if err := rows.Scan(
+	if err := s.Scan(
 		&video.ID,
 		&video.Title,
 		&description,
@@ -227,7 +200,7 @@ INSERT INTO videos (id, title, status, hls_path)
 VALUES ($1, $2, 'ready', $3)
 RETURNING id, title, description, status, source_path, hls_path, duration_seconds, created_at, updated_at;
 `
-	video, err := scanVideoRow(db.QueryRowContext(ctx, q, id, title, hlsPath))
+	video, err := scanVideo(db.QueryRowContext(ctx, q, id, title, hlsPath))
 	if err != nil {
 		return Video{}, fmt.Errorf("insert video from stream: %w", err)
 	}

@@ -33,7 +33,7 @@ const streamCols = `id, title, stream_key, status, hls_path, started_at, ended_a
 // CreateStream inserts a new stream record and returns it.
 func CreateStream(ctx context.Context, db *sql.DB, input CreateStreamInput) (Stream, error) {
 	const q = `INSERT INTO streams (id, title, stream_key) VALUES ($1, $2, $3) RETURNING ` + streamCols + `;`
-	s, err := scanStreamRow(db.QueryRowContext(ctx, q, input.ID, input.Title, input.StreamKey))
+	s, err := scanStream(db.QueryRowContext(ctx, q, input.ID, input.Title, input.StreamKey))
 	if err != nil {
 		return Stream{}, fmt.Errorf("insert stream: %w", err)
 	}
@@ -50,7 +50,7 @@ func ListStreams(ctx context.Context, db *sql.DB) ([]Stream, error) {
 
 	streams := make([]Stream, 0)
 	for rows.Next() {
-		s, err := scanStreamRows(rows)
+		s, err := scanStream(rows)
 		if err != nil {
 			return nil, fmt.Errorf("scan stream row: %w", err)
 		}
@@ -61,7 +61,7 @@ func ListStreams(ctx context.Context, db *sql.DB) ([]Stream, error) {
 
 // GetStreamByID returns a single stream by its ID.
 func GetStreamByID(ctx context.Context, db *sql.DB, id string) (Stream, error) {
-	s, err := scanStreamRow(db.QueryRowContext(ctx, "SELECT "+streamCols+" FROM streams WHERE id = $1;", id))
+	s, err := scanStream(db.QueryRowContext(ctx, "SELECT "+streamCols+" FROM streams WHERE id = $1;", id))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Stream{}, fmt.Errorf("stream not found: %w", sql.ErrNoRows)
@@ -73,7 +73,7 @@ func GetStreamByID(ctx context.Context, db *sql.DB, id string) (Stream, error) {
 
 // GetStreamByKey returns a stream by its RTMP stream key.
 func GetStreamByKey(ctx context.Context, db *sql.DB, streamKey string) (Stream, error) {
-	s, err := scanStreamRow(db.QueryRowContext(ctx, "SELECT "+streamCols+" FROM streams WHERE stream_key = $1;", streamKey))
+	s, err := scanStream(db.QueryRowContext(ctx, "SELECT "+streamCols+" FROM streams WHERE stream_key = $1;", streamKey))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Stream{}, fmt.Errorf("stream not found: %w", sql.ErrNoRows)
@@ -93,7 +93,10 @@ WHERE id = $2;`
 	if err != nil {
 		return fmt.Errorf("mark stream live: %w", err)
 	}
-	rows, _ := result.RowsAffected()
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("mark stream live: read rows affected: %w", err)
+	}
 	if rows == 0 {
 		return fmt.Errorf("stream not found: %w", sql.ErrNoRows)
 	}
@@ -111,7 +114,10 @@ WHERE id = $1;`
 	if err != nil {
 		return fmt.Errorf("mark stream ended: %w", err)
 	}
-	rows, _ := result.RowsAffected()
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("mark stream ended: read rows affected: %w", err)
+	}
 	if rows == 0 {
 		return fmt.Errorf("stream not found: %w", sql.ErrNoRows)
 	}
@@ -129,35 +135,13 @@ WHERE status = 'live';`
 	return err
 }
 
-func scanStreamRow(row *sql.Row) (Stream, error) {
+func scanStream(sc rowScanner) (Stream, error) {
 	var s Stream
 	var hlsPath sql.NullString
 	var startedAt, endedAt sql.NullTime
 	var createdAt, updatedAt time.Time
 
-	if err := row.Scan(&s.ID, &s.Title, &s.StreamKey, &s.Status, &hlsPath, &startedAt, &endedAt, &createdAt, &updatedAt); err != nil {
-		return Stream{}, err
-	}
-
-	s.HLSPath = nullStringToString(hlsPath)
-	if startedAt.Valid {
-		s.StartedAt = startedAt.Time.UTC().Format(time.RFC3339)
-	}
-	if endedAt.Valid {
-		s.EndedAt = endedAt.Time.UTC().Format(time.RFC3339)
-	}
-	s.CreatedAt = createdAt.UTC().Format(time.RFC3339)
-	s.UpdatedAt = updatedAt.UTC().Format(time.RFC3339)
-	return s, nil
-}
-
-func scanStreamRows(rows *sql.Rows) (Stream, error) {
-	var s Stream
-	var hlsPath sql.NullString
-	var startedAt, endedAt sql.NullTime
-	var createdAt, updatedAt time.Time
-
-	if err := rows.Scan(&s.ID, &s.Title, &s.StreamKey, &s.Status, &hlsPath, &startedAt, &endedAt, &createdAt, &updatedAt); err != nil {
+	if err := sc.Scan(&s.ID, &s.Title, &s.StreamKey, &s.Status, &hlsPath, &startedAt, &endedAt, &createdAt, &updatedAt); err != nil {
 		return Stream{}, err
 	}
 

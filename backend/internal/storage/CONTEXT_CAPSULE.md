@@ -18,7 +18,11 @@ This package is intentionally under `internal/` to avoid external imports.
     - `ListVideos`
     - `GetVideoByID`
     - `UpdateVideoStatus`
+    - `SetHLSPath` — actualiza `hls_path` sin cambiar status (usado mientras el transcoding sigue en curso)
     - `MarkVideoReady`
+- `streams.go`
+  - CRUD para streams. Comparte un `streamCols` const para evitar duplicar la lista de columnas en los SELECTs.
+  - `CreateStream`, `ListStreams`, `GetStreamByID`, `GetStreamByKey`, `MarkStreamLive`, `MarkStreamEnded`, `ResetStaleStreams`.
 
 ## Video Status Contract
 Accepted statuses used by API layer:
@@ -35,20 +39,19 @@ Statuses: `pending` → `live` → `ended`
 
 Campos en `streams`: `id`, `title`, `stream_key` (unique), `status`, `hls_path`, `started_at`, `ended_at`, `created_at`, `updated_at`. Sin FK a videos.
 
-Funciones en `streams.go`:
-- `CreateStream`, `ListStreams`, `GetStreamByID`, `GetStreamByKey`
 - `MarkStreamLive` (setea `hls_path` + `started_at`)
 - `MarkStreamEnded` (setea `ended_at`)
 - `ResetStaleStreams` (limpieza al startup)
 
 ## Conventions
 - Todas las funciones aceptan `context.Context`.
-- Errores wrapeados con `%w`.
+- Errores wrapeados con `%w`; `sql.ErrNoRows` se preserva (los handlers lo detectan con `errors.Is`).
 - Campos nullables convertidos con `sql.NullString` / `sql.NullTime`.
-- Timestamps: `TIMESTAMPTZ NOT NULL DEFAULT NOW()` en Postgres.
+- Timestamps: `TIMESTAMPTZ NOT NULL DEFAULT NOW()` en Postgres; los structs los serializan como RFC3339 UTC.
+- `rowScanner` interface compartida entre `*sql.Row` y `*sql.Rows` para que los scan helpers funcionen en ambos casos.
 
 ## Cache Coupling
-- Storage no conoce Redis. La capa API en `cmd/main.go` se encarga de invalidar las claves de cache (`videos:*`, `streams:*`) tras cada mutación.
+- Storage no conoce Redis. La capa de handlers en `internal/handlers/{videos,streams}.go` (y los flujos de transcoding en `internal/transcode/`) se encargan de invalidar las claves de cache (`videos:*`, `streams:*`) tras cada mutación.
 
 ## Tests
 - Unit tests en `videos_test.go`, `streams_test.go` con `testhelper_test.go`. Cada test crea un schema único en `TEST_DATABASE_URL` (default = `DATABASE_URL`), corre contra él y lo dropea en cleanup; si Postgres no está accesible, los tests se skipean.

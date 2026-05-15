@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { StreamItem, StreamListResponse } from '../models/stream.model';
+import { resolvePlaybackUrl as resolvePlaybackUrlUtil } from '../utils/playback-url';
 import { API_BASE_URL } from './video-api.service';
 
 @Injectable({ providedIn: 'root' })
@@ -21,8 +22,6 @@ export class StreamApiService {
   }
 
   resolvePlaybackUrl(hlsPath?: string): string | null {
-    if (!hlsPath) return null;
-    if (hlsPath.startsWith('http://') || hlsPath.startsWith('https://')) return hlsPath;
-    return `${API_BASE_URL}${hlsPath.startsWith('/') ? '' : '/'}${hlsPath}`;
+    return resolvePlaybackUrlUtil(hlsPath, API_BASE_URL);
   }
 }

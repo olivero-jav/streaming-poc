@@ -13,8 +13,8 @@ POC de streaming con arquitectura `backend` (Go + Gin + PostgreSQL + FFmpeg) y `
 - Go 1.25+
 - Node.js 22+
 - npm 10+
-- Docker (para MediaMTX)
-- PostgreSQL 18 instalado y corriendo
+- Docker (para MediaMTX y Redis vía `docker-compose.yml`)
+- PostgreSQL 18 instalado y corriendo (fuera de Docker)
 - `ffmpeg` disponible en PATH
 - OBS (para emitir streams)
 - ngrok instalado y autenticado (`ngrok config add-authtoken <token>`) — necesario solo para el despliegue con ngrok
@@ -30,13 +30,18 @@ CREATE DATABASE streaming OWNER streaming_user;
 
 Las tablas se crean automáticamente al iniciar el backend.
 
-## Levantar MediaMTX
+## Levantar MediaMTX + Redis
 
 ```powershell
 docker compose up -d
 ```
 
-Recibe RTMP en `:1935` y llama los hooks del backend al conectar/desconectar.
+`docker-compose.yml` levanta dos servicios:
+
+- **MediaMTX** en `:1935` (RTMP). Llama los hooks del backend al conectar/desconectar OBS.
+- **Redis** en `:6379`. Cache opcional con TTLs cortos. Si Redis no está disponible el backend sigue funcionando en modo fail-soft (todo directo contra Postgres).
+
+Postgres corre **fuera** del compose.
 
 ## Levantar backend
 
@@ -50,8 +55,13 @@ API por defecto: `http://localhost:8080`
 ### Variables de entorno
 
 - `DATABASE_URL`: connection string de PostgreSQL. Default: `postgres://streaming_user:streaming_pass@localhost:5432/streaming?sslmode=disable`
-- `CORS_ALLOWED_ORIGINS`: lista separada por comas de orígenes permitidos.
+- `REDIS_URL`: connection string de Redis. Default: `redis://localhost:6379`. Vacío o inalcanzable → backend corre sin cache (fail-soft).
+- `MAX_UPLOAD_BYTES`: tope de upload en bytes. Default: 524288000 (500 MB). Excederlo devuelve 413.
+- `CORS_ALLOWED_ORIGINS`: lista separada por comas de orígenes permitidos. Default: `http://localhost:4200,http://127.0.0.1:4200`.
 - `CORS_ALLOW_NGROK=true`: permite `https://*.ngrok-free.app` y `https://*.ngrok.io`.
+- `GIT_COMMIT`: opcional. Se expone como el campo `commit` en `GET /health`.
+- `BACKEND_ROOT`: ruta del árbol del backend (donde viven `uploads/` y `media/`). Si no se setea, se resuelve via `runtime.Caller` (funciona con `go run`, no para binarios deployados fuera del repo).
+- `TEST_DATABASE_URL`: usado por los tests del paquete `storage` y `handlers`. Default: igual a `DATABASE_URL`.
 
 Ejemplo:
 
@@ -142,6 +152,7 @@ Esa URL es la que se abre en el navegador. OBS sigue apuntando a `rtmp://localho
 4. Backend lanza FFmpeg que escribe HLS en `backend/media/live/<streamId>/`.
 5. En ~6s el stream pasa a `live` y es reproducible desde la app.
 6. Al detener OBS, MediaMTX llama `unpublish` → stream pasa a `ended`.
+7. El backend promueve automáticamente el stream a un VOD `ready` apuntando a los mismos archivos HLS (sin retranscoding ni copia). El video aparece en la lista de VOD inmediatamente.
 
 ## Load testing (k6)
 
