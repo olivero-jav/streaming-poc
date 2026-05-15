@@ -36,12 +36,22 @@ Las tablas se crean automáticamente al iniciar el backend.
 docker compose up -d
 ```
 
-`docker-compose.yml` levanta dos servicios:
+`docker-compose.yml` levanta por defecto dos servicios de infraestructura:
 
 - **MediaMTX** en `:1935` (RTMP). Llama los hooks del backend al conectar/desconectar OBS.
 - **Redis** en `:6379`. Cache opcional con TTLs cortos. Si Redis no está disponible el backend sigue funcionando en modo fail-soft (todo directo contra Postgres).
 
-Postgres corre **fuera** del compose.
+El backend y el frontend corren **nativos en el host** (ver pasos abajo) para mantener el dev-loop rápido (`go run`, `ng serve` con HMR). Postgres también corre fuera del compose.
+
+### Alternativa: todo en contenedor
+
+Para correr el backend + frontend buildeado dentro de un contenedor (útil para onboarding, demos o despliegues simples), usa el perfil `full`:
+
+```powershell
+docker compose --profile full up --build
+```
+
+Levanta los tres servicios (`mediamtx`, `redis`, `app`). El `app` builda Angular + Go en un multi-stage Dockerfile, sirve la SPA y la API desde el mismo binario en `http://localhost:8080`. Postgres sigue afuera — el contenedor lo alcanza via `host.docker.internal:5432` (configurado en `extra_hosts` para Linux). Los uploads y el output HLS persisten en los volúmenes `app_uploads` y `app_media` (manejados por Docker, sobreviven a `down`/`up`).
 
 ## Levantar backend
 

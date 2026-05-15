@@ -1,0 +1,47 @@
+# VCS
+.git
+.gitignore
+.gitattributes
+
+# IDE / editor
+.vscode
+.idea
+.editorconfig
+
+# Docs and CI artifacts (not needed inside the image)
+README.md
+**/CONTEXT_CAPSULE.md
+.agents
+
+# Frontend build cache and installed deps (built fresh inside the image)
+frontend/streaming-frontend/node_modules
+frontend/streaming-frontend/dist
+frontend/streaming-frontend/.angular
+frontend/streaming-frontend/.vscode
+
+# Go build artifacts
+backend/streaming-backend
+backend/streaming-backend.exe
+backend/*.exe
+backend/*.test
+backend/coverage.out
+
+# Runtime data (the container manages its own volumes for these)
+backend/uploads
+backend/media
+backend/tmp
+backend/logs
+
+# Load-test outputs
+testing/reports
+testing/hls-latency/node_modules
+testing/hls-latency/results
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Env files: never bake secrets into the image
+.env
+.env.*
+!.env.example

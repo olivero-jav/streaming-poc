@@ -5,8 +5,56 @@ services:
       - "1935:1935"
     volumes:
       - ./mediamtx.yml:/mediamtx.yml
+    # Linux compatibility: ensures the runOnReady/runOnNotReady hooks in
+    # mediamtx.yml can resolve host.docker.internal (already works out of the
+    # box on Docker Desktop for Mac/Windows).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Full-stack profile: builds and runs the Go backend (which also serves the
+  # Angular build). Excluded from the default `docker compose up` so the
+  # dev-loop stays native (`go run ./cmd` + `ng serve`). Bring it up with:
+  #
+  #   docker compose --profile full up --build
+  #
+  # Postgres is intentionally not in this compose; the backend connects to
+  # whichever Postgres is reachable via DATABASE_URL.
+  app:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      # Postgres lives on the host. host.docker.internal resolves via
+      # extra_hosts below on Linux; Docker Desktop maps it natively.
+      DATABASE_URL: "postgres://streaming_user:streaming_pass@host.docker.internal:5432/streaming?sslmode=disable"
+      REDIS_URL: "redis://redis:6379"
+      CORS_ALLOWED_ORIGINS: "http://localhost:8080,http://127.0.0.1:8080,http://localhost:4200"
+      CORS_ALLOW_NGROK: "true"
+    volumes:
+      # Named volumes (not host bind mounts) so file ownership inside the
+      # container — which runs as a non-root `app` user — stays consistent
+      # across Linux/macOS/Windows hosts. Persist across container restarts.
+      - app_uploads:/app/backend/uploads
+      - app_media:/app/backend/media
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  app_uploads:
+  app_media:
